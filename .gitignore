@@ -1,0 +1,8 @@
+﻿# Compiled binaries (optional local only)
+*.ex5
+
+# MetaTrader / editor junk
+*.log
+*.bak
+.vscode/
+.idea/
