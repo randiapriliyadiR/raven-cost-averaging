@@ -5,12 +5,20 @@
 //+------------------------------------------------------------------+
 #property copyright "Randi Apriliyadi"
 #property link      "https://github.com/randiapriliyadiR"
-#property version   "3.00"
+#property version   "3.10"
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
 
 #define PAIR_COUNT 7
+#define SMA_PERIOD 200
+#define PANEL_PREFIX "RT_"
+#define BTN_PAUSE    "RT_BTN_PAUSE"
+#define PANEL_BG     "RT_BG"
+#define PANEL_X      8
+#define PANEL_Y      12
+#define PANEL_W      560
+#define PANEL_H      200
 
 //--- Enumerasi Tipe Akun
 enum ENUM_ACCOUNT_TYPE
@@ -36,6 +44,9 @@ struct PairConfig
    ulong    magic;
    string   resolved;
    datetime last_trade_time;
+   string   last_action;
+   int      sma_handle;
+   string   sma_status;   // WAIT / OK / -
   };
 
 //--- Input Parameters: Umum
@@ -44,8 +55,17 @@ input ENUM_ACCOUNT_TYPE    AccountType            = ACCOUNT_CENT;        // Acco
 input int                  MaxLayers              = 100;                 // Max Layers
 input ENUM_MAX_LAYER_SCOPE MaxLayerScope          = MAX_LAYER_MAGIC_ONLY; // Max Layer Scope
 input string               SymbolSuffix           = "c";                 // Symbol Suffix (cent=c, kosong=tanpa)
+
+input string               Deskripsi_Ops          = "=== Kontrol Operasi ===";
+input bool                 TradingPause           = false;               // Pause Trading (no new opens)
+input int                  MaxTotalLayers         = 50;                  // Max Total Layers (all pairs)
+input double               MaxTotalLots           = 10.0;                // Max Total Lots (all pairs)
+
+input string               Deskripsi_Entry        = "=== Entry Filter ===";
+input bool                 UseSmaEntryFilter      = true;                // Entry awal hanya saat sentuh SMA200 M15
+
 input string               Deskripsi_Basket       = "=== Basket Close ===";
-input bool                 UseBasketClose         = true;               // Aktifkan Basket Close
+input bool                 UseBasketClose         = true;                // Aktifkan Basket Close
 input double               BasketCloseUSD         = 20.0;                // Basket Close Profit Target (USD)
 
 //--- EURUSD
@@ -87,7 +107,7 @@ input ulong                AUDUSD_Magic           = 555555;              // Magi
 input string               Deskripsi_USDJPY       = "=== USDJPY ===";
 input bool                 USDJPY_Enable          = true;                // Enable USDJPY
 input double               USDJPY_Lot             = 0.1;                 // Lot USDJPY
-input int                  USDJPY_PipStep         = 13;                  // PipStep USDJPY
+input int                  USDJPY_PipStep         = 130;                 // PipStep USDJPY
 input ulong                USDJPY_Magic           = 666666;              // Magic USDJPY
 
 //--- USDCAD
@@ -101,7 +121,8 @@ input ulong                USDCAD_Magic           = 777777;              // Magi
 CTrade         trade;
 CPositionInfo  m_position;
 PairConfig     g_pairs[PAIR_COUNT];
-const int      TRADE_RETRY_COUNT = 2; // 1 percobaan awal + 2 retry
+bool           g_trading_pause = false;
+const int      TRADE_RETRY_COUNT = 2;
 
 void ProcessAllPairs();
 void ApplyTPToExistingEAOrders(const int pair_index);
@@ -114,17 +135,38 @@ void CloseAllEAOrders(const string symbol, const ulong magic);
 double PipToPrice(const string symbol, const double pips);
 double NormalizeLot(const string symbol, double lot);
 void SetTradeMagic(const ulong magic);
+bool IsEaMagic(const ulong magic);
+void GetEaExposure(int &layers, double &lots, double &floating);
+bool CanOpenExposure(const int add_layers, const double add_lots);
+bool IsSmaTouched(const int pair_index);
+void CreateSmaHandles();
+void ReleaseSmaHandles();
+void CreatePanel();
+void DeletePanel();
+void UpdatePanel();
+void SetPairAction(const int pair_index, const string action);
 
-//+------------------------------------------------------------------+
-//| Set magic sebelum operasi trade                                   |
 //+------------------------------------------------------------------+
 void SetTradeMagic(const ulong magic)
   {
    trade.SetExpertMagicNumber(magic);
   }
 
-//+------------------------------------------------------------------+
-//| Wrapper trade dengan retry terbatas                              |
+void SetPairAction(const int pair_index, const string action)
+  {
+   g_pairs[pair_index].last_action = action;
+  }
+
+bool IsEaMagic(const ulong magic)
+  {
+   for(int i = 0; i < PAIR_COUNT; i++)
+     {
+      if(g_pairs[i].magic == magic)
+         return true;
+     }
+   return false;
+  }
+
 //+------------------------------------------------------------------+
 bool BuyWithRetry(double lot, string symbol, double price, double sl, double tp, string comment)
   {
@@ -198,8 +240,6 @@ bool PositionCloseWithRetry(ulong ticket)
   }
 
 //+------------------------------------------------------------------+
-//| Normalisasi lot sesuai spesifikasi symbol                        |
-//+------------------------------------------------------------------+
 double NormalizeLot(const string symbol, double lot)
   {
    double vmin  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
@@ -227,7 +267,113 @@ double NormalizeLot(const string symbol, double lot)
   }
 
 //+------------------------------------------------------------------+
-//| Isi array pair dari input                                        |
+void GetEaExposure(int &layers, double &lots, double &floating)
+  {
+   layers = 0;
+   lots = 0.0;
+   floating = 0.0;
+
+   for(int i = 0; i < PositionsTotal(); i++)
+     {
+      if(!m_position.SelectByIndex(i))
+         continue;
+
+      if(!IsEaMagic(m_position.Magic()))
+         continue;
+
+      layers++;
+      lots += m_position.Volume();
+      floating += m_position.Profit() + m_position.Swap() + m_position.Commission();
+     }
+  }
+
+bool CanOpenExposure(const int add_layers, const double add_lots)
+  {
+   int layers = 0;
+   double lots = 0.0;
+   double floating = 0.0;
+   GetEaExposure(layers, lots, floating);
+
+   if(layers + add_layers > MaxTotalLayers)
+      return false;
+   if(lots + add_lots > MaxTotalLots + 1e-8)
+      return false;
+   return true;
+  }
+
+//+------------------------------------------------------------------+
+//| Candle M15 bar0 high/low menyentuh SMA200                        |
+//+------------------------------------------------------------------+
+bool IsSmaTouched(const int pair_index)
+  {
+   if(!UseSmaEntryFilter)
+     {
+      g_pairs[pair_index].sma_status = "OK";
+      return true;
+     }
+
+   int handle = g_pairs[pair_index].sma_handle;
+   if(handle == INVALID_HANDLE)
+     {
+      g_pairs[pair_index].sma_status = "WAIT";
+      return false;
+     }
+
+   double ma[];
+   ArraySetAsSeries(ma, true);
+   if(CopyBuffer(handle, 0, 0, 1, ma) < 1)
+     {
+      g_pairs[pair_index].sma_status = "WAIT";
+      return false;
+     }
+
+   string symbol = g_pairs[pair_index].resolved;
+   double high = iHigh(symbol, PERIOD_M15, 0);
+   double low  = iLow(symbol, PERIOD_M15, 0);
+   if(high <= 0.0 || low <= 0.0)
+     {
+      g_pairs[pair_index].sma_status = "WAIT";
+      return false;
+     }
+
+   bool touch = (low <= ma[0] && high >= ma[0]);
+   g_pairs[pair_index].sma_status = touch ? "OK" : "WAIT";
+   return touch;
+  }
+
+void CreateSmaHandles()
+  {
+   for(int i = 0; i < PAIR_COUNT; i++)
+     {
+      g_pairs[i].sma_handle = INVALID_HANDLE;
+      g_pairs[i].sma_status = "-";
+
+      if(!g_pairs[i].enabled)
+         continue;
+
+      g_pairs[i].sma_handle = iMA(g_pairs[i].resolved, PERIOD_M15, SMA_PERIOD, 0, MODE_SMA, PRICE_CLOSE);
+      if(g_pairs[i].sma_handle == INVALID_HANDLE)
+        {
+         Print("Gagal buat SMA handle: ", g_pairs[i].resolved);
+         g_pairs[i].sma_status = "WAIT";
+        }
+      else
+         g_pairs[i].sma_status = UseSmaEntryFilter ? "WAIT" : "OK";
+     }
+  }
+
+void ReleaseSmaHandles()
+  {
+   for(int i = 0; i < PAIR_COUNT; i++)
+     {
+      if(g_pairs[i].sma_handle != INVALID_HANDLE)
+        {
+         IndicatorRelease(g_pairs[i].sma_handle);
+         g_pairs[i].sma_handle = INVALID_HANDLE;
+        }
+     }
+  }
+
 //+------------------------------------------------------------------+
 void InitPairConfigs()
   {
@@ -277,12 +423,12 @@ void InitPairConfigs()
      {
       g_pairs[i].resolved        = g_pairs[i].base_symbol + SymbolSuffix;
       g_pairs[i].last_trade_time = 0;
+      g_pairs[i].last_action     = "-";
+      g_pairs[i].sma_handle      = INVALID_HANDLE;
+      g_pairs[i].sma_status      = "-";
      }
   }
 
-//+------------------------------------------------------------------+
-//| Resolve symbol ke Market Watch; disable jika gagal               |
-//+------------------------------------------------------------------+
 void ResolvePairSymbols()
   {
    for(int i = 0; i < PAIR_COUNT; i++)
@@ -314,12 +460,138 @@ void ResolvePairSymbols()
   }
 
 //+------------------------------------------------------------------+
-//| Expert initialization function                                   |
+//| Panel                                                            |
+//+------------------------------------------------------------------+
+void DeletePanel()
+  {
+   ObjectsDeleteAll(0, PANEL_PREFIX);
+  }
+
+void CreatePanel()
+  {
+   DeletePanel();
+
+   // Background panel
+   ObjectCreate(0, PANEL_BG, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_XDISTANCE, PANEL_X);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_YDISTANCE, PANEL_Y);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_XSIZE, PANEL_W);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_YSIZE, PANEL_H);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_BGCOLOR, C'24,28,36');
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_COLOR, C'70,80,95');
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_BACK, false);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_HIDDEN, true);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_ZORDER, 0);
+
+   // Pause button
+   if(!ObjectCreate(0, BTN_PAUSE, OBJ_BUTTON, 0, 0, 0))
+      Print("Gagal buat tombol pause");
+   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_XDISTANCE, PANEL_X + 8);
+   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_YDISTANCE, PANEL_Y + 8);
+   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_XSIZE, 120);
+   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_YSIZE, 24);
+   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, BTN_PAUSE, OBJPROP_FONT, "Consolas");
+   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_FONTSIZE, 9);
+   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_ZORDER, 2);
+
+   // Header + rows as labels
+   for(int i = 0; i < PAIR_COUNT + 2; i++)
+     {
+      string name = PANEL_PREFIX + "L" + IntegerToString(i);
+      ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, PANEL_X + 8);
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, PANEL_Y + 38 + i * 16);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, clrWhite);
+      ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 9);
+      ObjectSetString(0, name, OBJPROP_FONT, "Consolas");
+      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+      ObjectSetInteger(0, name, OBJPROP_ZORDER, 1);
+     }
+
+   UpdatePanel();
+  }
+
+void UpdatePanel()
+  {
+   int layers = 0;
+   double lots = 0.0;
+   double floating = 0.0;
+   GetEaExposure(layers, lots, floating);
+
+   ObjectSetString(0, BTN_PAUSE, OBJPROP_TEXT, g_trading_pause ? "RESUME" : "PAUSE");
+   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_BGCOLOR, g_trading_pause ? clrDarkGreen : clrFireBrick);
+   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_COLOR, clrWhite);
+
+   string header1 = StringFormat("RAVEN TANAM v3.10 | Pause:%s | SMA Filter:%s",
+                                 g_trading_pause ? "ON" : "OFF",
+                                 UseSmaEntryFilter ? "ON" : "OFF");
+   string header2 = StringFormat("Exposure L:%d/%d  Lot:%.2f/%.2f  Float:%.2f",
+                                 layers, MaxTotalLayers, lots, MaxTotalLots, floating);
+
+   ObjectSetString(0, PANEL_PREFIX + "L0", OBJPROP_TEXT, header1);
+   ObjectSetString(0, PANEL_PREFIX + "L1", OBJPROP_TEXT, header2);
+
+   for(int i = 0; i < PAIR_COUNT; i++)
+     {
+      int buys = 0;
+      int sells = 0;
+      double pf = 0.0;
+
+      if(g_pairs[i].enabled)
+        {
+         for(int p = 0; p < PositionsTotal(); p++)
+           {
+            if(!m_position.SelectByIndex(p))
+               continue;
+            if(m_position.Symbol() != g_pairs[i].resolved || m_position.Magic() != g_pairs[i].magic)
+               continue;
+            if(m_position.PositionType() == POSITION_TYPE_BUY)
+               buys++;
+            else if(m_position.PositionType() == POSITION_TYPE_SELL)
+               sells++;
+            pf += m_position.Profit() + m_position.Swap() + m_position.Commission();
+           }
+
+         // Refresh SMA status for panel when waiting entry
+         if(buys == 0 && sells == 0 && UseSmaEntryFilter)
+            IsSmaTouched(i);
+         else if(!UseSmaEntryFilter)
+            g_pairs[i].sma_status = "OK";
+         else if(buys > 0 || sells > 0)
+            g_pairs[i].sma_status = "OK";
+        }
+      else
+         g_pairs[i].sma_status = "-";
+
+      string line = StringFormat("%s | %s | B:%d S:%d | F:%.2f | SMA:%s | %s",
+                                 g_pairs[i].resolved,
+                                 g_pairs[i].enabled ? "ON" : "OFF",
+                                 buys, sells, pf,
+                                 g_pairs[i].sma_status,
+                                 g_pairs[i].last_action);
+      ObjectSetString(0, PANEL_PREFIX + "L" + IntegerToString(i + 2), OBJPROP_TEXT, line);
+     }
+
+   ChartRedraw(0);
+  }
+
 //+------------------------------------------------------------------+
 int OnInit()
   {
+   g_trading_pause = TradingPause;
+
    InitPairConfigs();
    ResolvePairSymbols();
+   CreateSmaHandles();
 
    for(int i = 0; i < PAIR_COUNT; i++)
      {
@@ -327,36 +599,39 @@ int OnInit()
          ApplyTPToExistingEAOrders(i);
      }
 
+   CreatePanel();
    EventSetTimer(1);
    return(INIT_SUCCEEDED);
   }
 
-//+------------------------------------------------------------------+
-//| Expert deinitialization function                                 |
-//+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
    EventKillTimer();
+   ReleaseSmaHandles();
+   DeletePanel();
   }
 
-//+------------------------------------------------------------------+
-//| Expert tick function                                             |
-//+------------------------------------------------------------------+
 void OnTick()
   {
    ProcessAllPairs();
   }
 
-//+------------------------------------------------------------------+
-//| Timer — pastikan pair non-chart tetap diproses                   |
-//+------------------------------------------------------------------+
 void OnTimer()
   {
    ProcessAllPairs();
   }
 
-//+------------------------------------------------------------------+
-//| Proses semua pair yang aktif                                     |
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+  {
+   if(id == CHARTEVENT_OBJECT_CLICK && sparam == BTN_PAUSE)
+     {
+      g_trading_pause = !g_trading_pause;
+      ObjectSetInteger(0, BTN_PAUSE, OBJPROP_STATE, false);
+      Print("Trading pause: ", g_trading_pause ? "ON" : "OFF");
+      UpdatePanel();
+     }
+  }
+
 //+------------------------------------------------------------------+
 void ProcessAllPairs()
   {
@@ -370,10 +645,10 @@ void ProcessAllPairs()
 
       ManageGridAndGlobalTP(i);
      }
+
+   UpdatePanel();
   }
 
-//+------------------------------------------------------------------+
-//| Sinkronisasi TP agar tetap aktif walau EA mati                   |
 //+------------------------------------------------------------------+
 void SyncBasketTP(const string symbol, const ulong magic,
                   const double first_buy_price, const double first_sell_price, const double gap)
@@ -416,9 +691,6 @@ void SyncBasketTP(const string symbol, const ulong magic,
      }
   }
 
-//+------------------------------------------------------------------+
-//| Pasang TP untuk posisi lama saat EA attach/restart               |
-//+------------------------------------------------------------------+
 void ApplyTPToExistingEAOrders(const int pair_index)
   {
    string symbol = g_pairs[pair_index].resolved;
@@ -461,9 +733,6 @@ void ApplyTPToExistingEAOrders(const int pair_index)
      }
   }
 
-//+------------------------------------------------------------------+
-//| Fungsi Konversi Pip ke Nilai Harga (per symbol)                  |
-//+------------------------------------------------------------------+
 double PipToPrice(const string symbol, const double pips)
   {
    int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
@@ -474,9 +743,6 @@ double PipToPrice(const string symbol, const double pips)
    return pips * point;
   }
 
-//+------------------------------------------------------------------+
-//| Cek profit basket per pair                                       |
-//+------------------------------------------------------------------+
 void CheckBasketProfit(const int pair_index)
   {
    if(!UseBasketClose)
@@ -506,14 +772,12 @@ void CheckBasketProfit(const int pair_index)
    if(basket_profit >= target_value)
      {
       CloseAllEAOrders(symbol, magic);
+      SetPairAction(pair_index, "Basket");
       Print("Basket close tercapai [", symbol, "]. Total profit: ", basket_profit,
             " | Target: ", target_value);
      }
   }
 
-//+------------------------------------------------------------------+
-//| Hitung jumlah layer buy/sell sesuai scope MaxLayers              |
-//+------------------------------------------------------------------+
 void GetLayerCounts(const string symbol, const ulong magic, int &buy_layers, int &sell_layers)
   {
    buy_layers = 0;
@@ -537,8 +801,6 @@ void GetLayerCounts(const string symbol, const ulong magic, int &buy_layers, int
      }
   }
 
-//+------------------------------------------------------------------+
-//| Manajemen Grid Layering dan TP Global per pair                   |
 //+------------------------------------------------------------------+
 void ManageGridAndGlobalTP(const int pair_index)
   {
@@ -597,11 +859,30 @@ void ManageGridAndGlobalTP(const int pair_index)
 
    SetTradeMagic(magic);
 
-   // --- ATURAN 1: KONDISI AWAL (Langsung Open Buy & Sell) ---
+   // --- ATURAN 1: ENTRY AWAL ---
    if(total_buys == 0 && total_sells == 0)
      {
+      if(g_trading_pause)
+        {
+         SetPairAction(pair_index, "Pause");
+         return;
+        }
+
+      if(!IsSmaTouched(pair_index))
+        {
+         SetPairAction(pair_index, "SMA wait");
+         return;
+        }
+
       if(buy_layer_count < MaxLayers && sell_layer_count < MaxLayers)
         {
+         // Initial hedge = 2 posisi
+         if(!CanOpenExposure(2, lot * 2.0))
+           {
+            SetPairAction(pair_index, "MaxExp");
+            return;
+           }
+
          if(TimeCurrent() - g_pairs[pair_index].last_trade_time > 3)
            {
             double initial_buy_tp = NormalizeDouble(ask + gap, digits);
@@ -610,33 +891,46 @@ void ManageGridAndGlobalTP(const int pair_index)
             BuyWithRetry(lot, symbol, ask, 0, initial_buy_tp, "Initial Buy");
             SellWithRetry(lot, symbol, bid, 0, initial_sell_tp, "Initial Sell");
             g_pairs[pair_index].last_trade_time = TimeCurrent();
+            SetPairAction(pair_index, "Initial");
            }
         }
       return;
      }
 
+   // Posisi sudah ada: sync TP & manage tetap jalan meski pause
    SyncBasketTP(symbol, magic, anchor_buy_price, anchor_sell_price, gap);
 
-   // --- ATURAN 2: GRID LAYERING ---
-   if(total_buys > 0 && buy_layer_count < MaxLayers && ask <= (lowest_buy_price - gap))
+   // --- ATURAN 2: GRID LAYERING (tanpa filter SMA) ---
+   if(!g_trading_pause)
      {
-      if(TimeCurrent() - g_pairs[pair_index].last_trade_time > 3)
+      if(total_buys > 0 && buy_layer_count < MaxLayers && ask <= (lowest_buy_price - gap))
         {
-         double grid_buy_tp = NormalizeDouble(anchor_buy_price + gap, digits);
-         BuyWithRetry(lot, symbol, ask, 0, grid_buy_tp, "Grid Buy Layer");
-         g_pairs[pair_index].last_trade_time = TimeCurrent();
+         if(!CanOpenExposure(1, lot))
+            SetPairAction(pair_index, "MaxExp");
+         else if(TimeCurrent() - g_pairs[pair_index].last_trade_time > 3)
+           {
+            double grid_buy_tp = NormalizeDouble(anchor_buy_price + gap, digits);
+            BuyWithRetry(lot, symbol, ask, 0, grid_buy_tp, "Grid Buy Layer");
+            g_pairs[pair_index].last_trade_time = TimeCurrent();
+            SetPairAction(pair_index, "GridBuy");
+           }
         }
-     }
 
-   if(total_sells > 0 && sell_layer_count < MaxLayers && bid >= (highest_sell_price + gap))
-     {
-      if(TimeCurrent() - g_pairs[pair_index].last_trade_time > 3)
+      if(total_sells > 0 && sell_layer_count < MaxLayers && bid >= (highest_sell_price + gap))
         {
-         double grid_sell_tp = NormalizeDouble(anchor_sell_price - gap, digits);
-         SellWithRetry(lot, symbol, bid, 0, grid_sell_tp, "Grid Sell Layer");
-         g_pairs[pair_index].last_trade_time = TimeCurrent();
+         if(!CanOpenExposure(1, lot))
+            SetPairAction(pair_index, "MaxExp");
+         else if(TimeCurrent() - g_pairs[pair_index].last_trade_time > 3)
+           {
+            double grid_sell_tp = NormalizeDouble(anchor_sell_price - gap, digits);
+            SellWithRetry(lot, symbol, bid, 0, grid_sell_tp, "Grid Sell Layer");
+            g_pairs[pair_index].last_trade_time = TimeCurrent();
+            SetPairAction(pair_index, "GridSell");
+           }
         }
      }
+   else
+      SetPairAction(pair_index, "Pause");
 
    // --- ATURAN 3: TP GLOBAL ---
    if(total_buys > 0)
@@ -645,6 +939,7 @@ void ManageGridAndGlobalTP(const int pair_index)
       if(bid >= global_tp_buy)
         {
          CloseAllDirection(symbol, magic, POSITION_TYPE_BUY);
+         SetPairAction(pair_index, "TP Buy");
          Print("TP Global Buy Terpenuhi [", symbol, "].");
         }
      }
@@ -655,14 +950,12 @@ void ManageGridAndGlobalTP(const int pair_index)
       if(ask <= global_tp_sell)
         {
          CloseAllDirection(symbol, magic, POSITION_TYPE_SELL);
+         SetPairAction(pair_index, "TP Sell");
          Print("TP Global Sell Terpenuhi [", symbol, "].");
         }
      }
   }
 
-//+------------------------------------------------------------------+
-//| Mass Close Per Arah Posisi                                       |
-//+------------------------------------------------------------------+
 void CloseAllDirection(const string symbol, const ulong magic, ENUM_POSITION_TYPE type)
   {
    SetTradeMagic(magic);
@@ -677,9 +970,6 @@ void CloseAllDirection(const string symbol, const ulong magic, ENUM_POSITION_TYP
      }
   }
 
-//+------------------------------------------------------------------+
-//| Mass Close Semua Posisi EA untuk pair                            |
-//+------------------------------------------------------------------+
 void CloseAllEAOrders(const string symbol, const ulong magic)
   {
    SetTradeMagic(magic);
