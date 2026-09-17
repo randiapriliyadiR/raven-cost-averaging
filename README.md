@@ -1,90 +1,79 @@
-# RAVEN TANAM
+# Raven Cost Averaging
 
-Expert Advisor (EA) MetaTrader 5 multi-major: grid hedge dengan basket close (opsional), Take Profit broker-side, panel kontrol, dan filter entry SMA200 M15.
+MetaTrader 5 multi-major grid hedge EA with broker-side Take Profit, chart control panel, and optional SMA200 M15 entry filter.
 
-**Versi:** 3.10  
+**Version:** 3.2  
 **Platform:** MetaTrader 5 (MQL5)  
 **Author:** [Randi Apriliyadi](https://github.com/randiapriliyadiR)
 
 ---
 
-## Fitur Utama
+## Features
 
-- **Multi-major** — satu attach EA mengelola 7 major sekaligus (on/off per pair)
-- **Lot & PipStep per pair** — jarak layer dan lot bisa beda tiap major
-- **Magic number per pair** — posisi tiap pair terpisah
-- **SymbolSuffix** — cocok untuk akun cent (`c`) atau suffix broker lain
-- **Filter entry SMA200 M15** — entry awal Buy+Sell hanya saat candle M15 menyentuh SMA200 (default ON); layer grid tetap biasa
-- **Panel chart** — status per pair, exposure, floating, tombol Pause/Resume
-- **Max exposure** — batas total layer & total lot semua pair EA
-- **Trading pause** — stop buka order baru tanpa detach EA (input + tombol chart)
-- **Basket Close** — evaluasi **per pair**; target USD dari **satu** input bersama
-- **TP Broker-side** — TP di server broker (tetap aktif meski EA mati)
-- **OnTick + OnTimer** — pair non-chart tetap diproses setiap 1 detik
-- **Trade Retry** — open / modify / close diulang maksimal 2x jika gagal
+- **Multi-major** — one EA manages 7 majors (enable per pair)
+- **Lot & Pip Step per pair** — independent spacing and lot size
+- **Magic number per pair** — isolated positions and closed profit tracking
+- **Symbol Suffix** — works with cent accounts (`c`) or other broker suffixes
+- **SMA200 M15 entry filter** — initial Buy+Sell only when M15 candle touches SMA200 (default ON); grid layers unrestricted
+- **Chart panel** — title, pause control, layers/lot/total float, per-pair table
+- **Max Layers** — optional per-direction cap (`0` = unlimited)
+- **Trading pause** — starts paused; resume from chart button (no input)
+- **Broker-side TP** — remains active even if EA is detached
+- **OnTick + OnTimer** — non-chart pairs processed every 1 second
+- **Trade retry** — open / modify / close retried up to 2 times on failure
 
 ---
 
-## Cara Install
+## Install
 
-1. Salin file `RAVEN TANAM.mq5` ke folder:
+1. Copy `Raven Cost Averaging.mq5` into:
    ```
    MetaTrader 5\MQL5\Experts\
    ```
-2. Buka MetaEditor → Compile (`F7`)
-3. Restart MetaTrader 5 (atau refresh Navigator)
-4. Drag EA ke **satu chart apa saja**
-5. Atur parameter (enable pair, suffix, lot, PipStep), lalu klik **OK**
+2. Open MetaEditor → Compile (`F7`)
+3. Restart MetaTrader 5 (or refresh Navigator)
+4. Attach the EA to **any single chart**
+5. Set parameters (pair enable, suffix, lot, pip step), then click **OK**
+6. Press **RESUME** on the panel to allow new entries
 
-Pastikan:
-- **AutoTrading** aktif
-- Broker mengizinkan hedge (account hedging)
-- Symbol major (+ suffix) ada di Market Watch
+Requirements:
+
+- **AutoTrading** enabled
+- Hedging account
+- Major symbols (+ suffix) visible in Market Watch
 
 ---
 
-## Parameter Input
+## Inputs
 
-### Pengaturan Umum
+### General
 
-| Parameter | Default | Keterangan |
-|-----------|---------|------------|
-| `AccountType` | Cents | Cent atau Standard (konversi target basket) |
-| `MaxLayers` | `100` | Batas maksimum layer per arah (scope) |
-| `MaxLayerScope` | Magic Only | Scope penghitungan batas layer |
-| `SymbolSuffix` | `c` | Suffix symbol (cent → `EURUSDc`). Kosongkan jika tanpa suffix |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `MaxLayers` | `0` | Max layers per direction (`0` = no limit) |
+| `MaxLayerScope` | Magic Only | How layer counts are measured |
+| `SymbolSuffix` | `c` | Symbol suffix (`EURUSDc`). Leave empty if none |
 
-### Kontrol Operasi
+### Operations
 
-| Parameter | Default | Keterangan |
-|-----------|---------|------------|
-| `TradingPause` | `false` | Pause buka order baru (tombol chart juga bisa toggle) |
-| `MaxTotalLayers` | `50` | Maks total posisi EA di semua pair |
-| `MaxTotalLots` | `10.0` | Maks total lot EA di semua pair |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `ShowPanel` | `true` | Show/hide chart panel |
 
-Saat pause: tidak buka entry/layer baru; basket close, sync TP, dan TP global tetap jalan.
+Trading always starts **paused** on first attach. Changing inputs keeps the current Pause/Resume state. While paused: no new entries/layers; TP sync and global TP still run.
 
 ### Entry Filter
 
-| Parameter | Default | Keterangan |
-|-----------|---------|------------|
-| `UseSmaEntryFilter` | `true` | Entry awal hanya jika high/low candle M15 bar 0 menyentuh SMA200 |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `UseSmaEntryFilter` | `true` | Initial entry only when M15 bar 0 high/low touches SMA200 |
 
-Filter ini **hanya** untuk initial Buy+Sell saat pair kosong. Layer berikutnya tidak menunggu SMA.
-
-### Basket Close
-
-| Parameter | Default | Keterangan |
-|-----------|---------|------------|
-| `UseBasketClose` | `true` | On/Off basket close |
-| `BasketCloseUSD` | `20.0` | Target profit per pair (USD) |
-
-Basket dievaluasi **per pair**. Jika EURUSD mencapai target, hanya posisi EURUSD yang ditutup.
+Applies only to the first Buy+Sell when a pair is flat. Grid layers do not wait for SMA.
 
 ### Default Per Pair
 
-| Pair | Enable | Lot | PipStep | Magic |
-|------|--------|-----|---------|-------|
+| Pair | Enable | Lot | Pip Step | Magic |
+|------|--------|-----|----------|-------|
 | EURUSD | ON | 0.1 | 10 | 111111 |
 | GBPUSD | ON | 0.1 | 14 | 222222 |
 | USDCHF | ON | 0.1 | 9 | 333333 |
@@ -93,86 +82,81 @@ Basket dievaluasi **per pair**. Jika EURUSD mencapai target, hanya posisi EURUSD
 | USDJPY | ON | 0.1 | 130 | 666666 |
 | USDCAD | ON | 0.1 | 11 | 777777 |
 
-Tiap pair punya input: `Enable`, `Lot`, `PipStep`, `Magic`.
+Each pair has: `Enable`, `Lot`, `Pip Step`, `Magic`.
+
+Changing any input and confirming OK reloads runtime settings and refreshes the panel immediately.
 
 ### Max Layer Scope
 
-| Opsi | Arti |
-|------|------|
-| **Hanya Magic Number EA (Symbol Ini)** | Hitung layer hanya posisi magic + symbol pair itu |
-| **Semua Trade di Akun** | Hitung semua posisi buy/sell di seluruh akun |
+| Option | Meaning |
+|--------|---------|
+| **Magic Only (this symbol)** | Count layers for this pair magic + symbol only |
+| **All account trades** | Count all buy/sell positions on the account |
 
 ---
 
-## Panel Chart
+## Chart Panel
 
-Di sudut kiri atas chart:
+Top-left on the chart:
 
-- Tombol **PAUSE / RESUME**
-- Header: versi, status pause, SMA filter, exposure (layer/lot), floating total
-- Baris per pair: `Symbol | ON/OFF | B/S | Float | SMA:WAIT/OK/- | last action`
+- Title: **Raven Cost Averaging v3.2**
+- Credit: EA developed by Randi Apriliyadi - 2026
+- Status: Pause / SMA Filter
+- Layers, Lot, **Total Float** (green if ≥ 0, red if < 0)
+- **PAUSE / RESUME** button
+- Table: `Symbol | Magic | Lot | Pips | Buy | Sell | Float | Profit`
 
-Contoh `last action`: `Initial`, `GridBuy`, `GridSell`, `Basket`, `TP Buy`, `Pause`, `MaxExp`, `SMA wait`.
+`Profit` is closed/realized P/L for that pair magic. Panel UI refresh is throttled (~250 ms); closed profit history is cached (~1.5 s).
 
 ---
 
-## Logika Trading (Ringkas)
+## Trading Logic (summary)
 
 ```
 OnInit
-  ├─ Resolve symbol = base + SymbolSuffix → SymbolSelect
-  ├─ Buat handle SMA200 M15 per pair
-  ├─ Pasang TP ke posisi lama
-  └─ Buat panel + tombol pause
+  ├─ Restore pause (if parameters changed) or start paused
+  ├─ ApplyRuntimeSettings (pairs, SMA, TP sync, panel)
+  └─ Timer 1s
 
-OnTick / OnTimer(1s)
-  └─ Untuk setiap pair ON:
-       ├─ Basket close (jika ON)
+OnTick / OnTimer
+  └─ For each enabled pair:
        └─ Manage Grid
-            ├─ Belum ada posisi
-            │    ├─ Pause? → skip open
-            │    ├─ SMA filter ON & belum sentuh? → tunggu
-            │    ├─ Max exposure? → skip
+            ├─ Flat
+            │    ├─ Paused? → skip
+            │    ├─ SMA filter ON & no touch? → wait
             │    └─ Open Buy + Sell
-            ├─ Ada posisi → Sync TP
-            ├─ (!Pause) Layer grid seperti biasa (tanpa SMA)
-            └─ TP global → Close arah tersebut
-  └─ Update panel
+            ├─ Has positions → Sync TP
+            ├─ (!Paused) Grid layers (no SMA)
+            └─ Global TP → close that direction
+  └─ MaybeUpdatePanel
 ```
 
-### Anchor Entry
+### Anchor entry
 
-- **Buy anchor** = harga open Buy tertinggi (entry awal buy)
-- **Sell anchor** = harga open Sell terendah (entry awal sell)
-- Semua layer arah yang sama memakai **TP yang sama** berdasarkan anchor + `PipStep` pair itu
-
-### Konversi Basket (Cent vs Standard)
-
-| Account Type | Target `$20` dihitung sebagai |
-|--------------|-------------------------------|
-| Standard | `20` |
-| Cent | `2000` (`20 × 100`) |
+- **Buy anchor** = highest Buy open price
+- **Sell anchor** = lowest Sell open price
+- Same-direction layers share TP from anchor + pair `Pip Step`
 
 ---
 
-## Struktur File
+## Files
 
 ```
-RAVEN TANAM/
-├── RAVEN TANAM.mq5   # Source code EA
-├── RAVEN TANAM.ex5   # Binary (compile di MetaEditor)
-└── README.md         # Dokumentasi ini
+Raven Cost Averaging/
+├── Raven Cost Averaging.mq5    # EA source
+├── Raven Cost Averaging.mqproj # MetaEditor project
+├── Raven Cost Averaging.ex5    # Binary (after compile)
+└── README.md
 ```
 
 ---
 
 ## Disclaimer
 
-EA ini untuk tujuan edukasi dan eksperimen. Trading forex/CFD berisiko tinggi. Gunakan di akun demo dulu, uji parameter dengan hati-hati, dan bertanggung jawab penuh atas keputusan trading Anda.
+For education and experimentation. Forex/CFD trading involves substantial risk. Test on demo first and take full responsibility for your trading decisions.
 
 ---
 
 ## License
 
-Proyek pribadi — © Randi Apriliyadi.  
-Silakan sesuaikan license jika repo akan dipublikasikan secara terbuka.
+Private project — © Randi Apriliyadi.
