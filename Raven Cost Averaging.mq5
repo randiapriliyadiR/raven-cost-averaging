@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Randi Apriliyadi"
 #property link      "https://github.com/randiapriliyadiR"
-#property version   "3.20"
+#property version   "3.30"
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
@@ -750,7 +750,7 @@ void CreatePanel()
 
    // More breathing room between title and credit
    CreateLabel(PANEL_TITLE, PANEL_X + PANEL_PAD, PANEL_Y + 10, 15, clrWhite);
-   ObjectSetString(0, PANEL_TITLE, OBJPROP_TEXT, "Raven Cost Averaging v3.2");
+   ObjectSetString(0, PANEL_TITLE, OBJPROP_TEXT, "Raven Cost Averaging v3.3");
 
    CreateLabel(PANEL_CREDIT, PANEL_X + PANEL_PAD, PANEL_Y + 40, 8, C'150,158,170');
    ObjectSetString(0, PANEL_CREDIT, OBJPROP_TEXT, "EA developed by Randi Apriliyadi - 2026");
