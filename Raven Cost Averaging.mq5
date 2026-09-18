@@ -14,6 +14,7 @@
 #define SMA_PERIOD           200
 #define PANEL_PREFIX         "RCA_"
 #define BTN_PAUSE            "RCA_BTN_PAUSE"
+#define BTN_SMA              "RCA_BTN_SMA"
 #define PANEL_BG             "RCA_BG"
 #define PANEL_TITLE          "RCA_TITLE"
 #define PANEL_CREDIT         "RCA_CREDIT"
@@ -21,13 +22,20 @@
 #define PANEL_EXPOSURE       "RCA_EXPOSURE"
 #define PANEL_TOTAL_FLOAT    "RCA_TOTAL_FLOAT"
 #define PANEL_HDR            "RCA_HDR"
+#define PANEL_TBL            "RCA_TBL"
+#define PANEL_THD            "RCA_THD"
 #define PANEL_X              8
 #define PANEL_Y              12
-#define PANEL_W              780
-#define PANEL_H              280
+#define PANEL_PAD            10
 #define PANEL_UI_MS          250
 #define PANEL_HISTORY_MS     1500
 #define GV_PAUSE_KEY         "RCA_PAUSE_STATE"
+#define GV_SMA_KEY           "RCA_SMA_STATE"
+#define TABLE_HDR_H          20
+#define TABLE_ROW_H          18
+#define TABLE_LEFT_PAD       10
+#define TABLE_COLS           8
+#define FONT_CHAR_W          7   // Consolas ~9pt pixel width (no Canvas dependency)
 
 //--- Max Layer Scope
 enum ENUM_MAX_LAYER_SCOPE
@@ -64,7 +72,8 @@ input bool                 ShowPanel              = true;                // Show
 
 //--- Entry Filter
 input string               InpSectionEntry        = "=== Entry Filter ===";
-input bool                 UseSmaEntryFilter      = true;                // SMA200 M15 entry filter
+input bool                 UseSmaEntryFilter      = true;                // SMA200 entry filter (default)
+input ENUM_TIMEFRAMES      SmaTimeframe           = PERIOD_M15;          // SMA200 timeframe
 
 //--- EURUSD
 input string               InpSectionEURUSD       = "=== EURUSD ===";
@@ -120,6 +129,7 @@ CTrade         trade;
 CPositionInfo  m_position;
 PairConfig     g_pairs[PAIR_COUNT];
 bool           g_trading_pause = true;
+bool           g_sma_filter = true;
 uint           g_last_panel_ms = 0;
 uint           g_last_history_ms = 0;
 const int      TRADE_RETRY_COUNT = 2;
@@ -149,9 +159,23 @@ void RefreshClosedProfits();
 void SetPairAction(const int pair_index, const string action);
 void SetLabelText(const string name, const string text);
 void SetLabelColor(const string name, const color clr);
+void CreateLabel(const string name, const int x, const int y, const int fontsize, const color clr);
+void CreateRectLabel(const string name, const int x, const int y, const int w, const int h,
+                     const color bg, const color border);
+void CreateTableFrame(const int table_x, const int table_y, const int table_w, const int table_h);
+string FormatTableHeader();
+string FormatTableRow(const int pair_index, const int buys, const int sells, const double pf);
 string PauseGvName();
+string SmaGvName();
+string PeriodToShort(const ENUM_TIMEFRAMES tf);
+string StatusLineText();
 void SavePauseState();
+void SaveSmaFilterState();
 void RestoreOrInitPauseState();
+void ApplySmaFilterFromInput();
+void CreateSoftButton(const string name, const int x, const int y, const int w, const int h);
+void RefreshControlButtons();
+void RefreshStatusLine();
 
 //+------------------------------------------------------------------+
 string PauseGvName()
@@ -159,9 +183,56 @@ string PauseGvName()
    return GV_PAUSE_KEY + "_" + IntegerToString((int)ChartID());
   }
 
+string SmaGvName()
+  {
+   return GV_SMA_KEY + "_" + IntegerToString((int)ChartID());
+  }
+
+string PeriodToShort(const ENUM_TIMEFRAMES tf)
+  {
+   switch(tf)
+     {
+      case PERIOD_M1:  return "M1";
+      case PERIOD_M2:  return "M2";
+      case PERIOD_M3:  return "M3";
+      case PERIOD_M4:  return "M4";
+      case PERIOD_M5:  return "M5";
+      case PERIOD_M6:  return "M6";
+      case PERIOD_M10: return "M10";
+      case PERIOD_M12: return "M12";
+      case PERIOD_M15: return "M15";
+      case PERIOD_M20: return "M20";
+      case PERIOD_M30: return "M30";
+      case PERIOD_H1:  return "H1";
+      case PERIOD_H2:  return "H2";
+      case PERIOD_H3:  return "H3";
+      case PERIOD_H4:  return "H4";
+      case PERIOD_H6:  return "H6";
+      case PERIOD_H8:  return "H8";
+      case PERIOD_H12: return "H12";
+      case PERIOD_D1:  return "D1";
+      case PERIOD_W1:  return "W1";
+      case PERIOD_MN1: return "MN1";
+      default:         return IntegerToString((int)tf);
+     }
+  }
+
+string StatusLineText()
+  {
+   return StringFormat("Status:%s | SMA:%s %s",
+                       g_trading_pause ? "Paused" : "Active",
+                       g_sma_filter ? "ON" : "OFF",
+                       PeriodToShort(SmaTimeframe));
+  }
+
 void SavePauseState()
   {
    GlobalVariableSet(PauseGvName(), g_trading_pause ? 1.0 : 0.0);
+  }
+
+void SaveSmaFilterState()
+  {
+   GlobalVariableSet(SmaGvName(), g_sma_filter ? 1.0 : 0.0);
   }
 
 void RestoreOrInitPauseState()
@@ -178,6 +249,12 @@ void RestoreOrInitPauseState()
      }
    else
       g_trading_pause = true;
+  }
+
+void ApplySmaFilterFromInput()
+  {
+   // Input is source of truth whenever settings are (re)applied
+   g_sma_filter = UseSmaEntryFilter;
   }
 
 void SetTradeMagic(const ulong magic)
@@ -307,7 +384,7 @@ double NormalizeLot(const string symbol, double lot)
 //+------------------------------------------------------------------+
 bool IsSmaTouched(const int pair_index)
   {
-   if(!UseSmaEntryFilter)
+   if(!g_sma_filter)
      {
       g_pairs[pair_index].sma_status = "OK";
       return true;
@@ -329,8 +406,8 @@ bool IsSmaTouched(const int pair_index)
      }
 
    string symbol = g_pairs[pair_index].resolved;
-   double high = iHigh(symbol, PERIOD_M15, 0);
-   double low  = iLow(symbol, PERIOD_M15, 0);
+   double high = iHigh(symbol, SmaTimeframe, 0);
+   double low  = iLow(symbol, SmaTimeframe, 0);
    if(high <= 0.0 || low <= 0.0)
      {
       g_pairs[pair_index].sma_status = "WAIT";
@@ -352,14 +429,14 @@ void CreateSmaHandles()
       if(!g_pairs[i].enabled)
          continue;
 
-      g_pairs[i].sma_handle = iMA(g_pairs[i].resolved, PERIOD_M15, SMA_PERIOD, 0, MODE_SMA, PRICE_CLOSE);
+      g_pairs[i].sma_handle = iMA(g_pairs[i].resolved, SmaTimeframe, SMA_PERIOD, 0, MODE_SMA, PRICE_CLOSE);
       if(g_pairs[i].sma_handle == INVALID_HANDLE)
         {
-         Print("Failed to create SMA handle: ", g_pairs[i].resolved);
+         Print("Failed to create SMA handle: ", g_pairs[i].resolved, " TF=", PeriodToShort(SmaTimeframe));
          g_pairs[i].sma_status = "WAIT";
         }
       else
-         g_pairs[i].sma_status = UseSmaEntryFilter ? "WAIT" : "OK";
+         g_pairs[i].sma_status = g_sma_filter ? "WAIT" : "OK";
      }
   }
 
@@ -463,6 +540,7 @@ void ResolvePairSymbols()
 
 void ApplyRuntimeSettings()
   {
+   ApplySmaFilterFromInput();
    ReleaseSmaHandles();
    InitPairConfigs();
    ResolvePairSymbols();
@@ -520,16 +598,147 @@ void CreateLabel(const string name, const int x, const int y, const int fontsize
    ObjectSetInteger(0, name, OBJPROP_ZORDER, 1);
   }
 
+void CreateRectLabel(const string name, const int x, const int y, const int w, const int h,
+                     const color bg, const color border)
+  {
+   ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
+   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, bg);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, border);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, name, OBJPROP_BACK, false);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+   ObjectSetInteger(0, name, OBJPROP_ZORDER, 0);
+  }
+
+string FormatTableHeader()
+  {
+   return StringFormat("%-12s %-8s %6s %5s %4s %4s %9s %10s",
+                       "Symbol", "Magic", "Lot", "Pips", "Buy", "Sell", "Float", "Profit");
+  }
+
+string FormatTableRow(const int pair_index, const int buys, const int sells, const double pf)
+  {
+   return StringFormat("%-12s %-8s %6.2f %5d %4d %4d %9.2f %10.2f",
+                       g_pairs[pair_index].resolved,
+                       IntegerToString((int)g_pairs[pair_index].magic),
+                       g_pairs[pair_index].lot,
+                       g_pairs[pair_index].pip_step,
+                       buys,
+                       sells,
+                       pf,
+                       g_pairs[pair_index].closed_profit);
+  }
+
+void CreateTableFrame(const int table_x, const int table_y, const int table_w, const int table_h)
+  {
+   // Outer frame + fill
+   CreateRectLabel(PANEL_TBL, table_x, table_y, table_w, table_h, C'28,32,40', C'100,112,128');
+
+   // Header band
+   CreateRectLabel(PANEL_THD, table_x + 1, table_y + 1, table_w - 2, TABLE_HDR_H - 1,
+                   C'42,48,58', C'42,48,58');
+
+   // Horizontal row lines (below header + after each data row)
+   for(int i = 0; i <= PAIR_COUNT; i++)
+     {
+      int y = table_y + TABLE_HDR_H + i * TABLE_ROW_H;
+      CreateRectLabel(PANEL_PREFIX + "HL" + IntegerToString(i),
+                      table_x + 1, y, table_w - 2, 1,
+                      C'70,80,95', C'70,80,95');
+     }
+
+   // Vertical column guides — widths match FormatTableHeader gaps
+   int cw = FONT_CHAR_W;
+   int col_chars[TABLE_COLS];
+   col_chars[0] = 12;
+   col_chars[1] = 8;
+   col_chars[2] = 6;
+   col_chars[3] = 5;
+   col_chars[4] = 4;
+   col_chars[5] = 4;
+   col_chars[6] = 9;
+   col_chars[7] = 10;
+   int x = table_x + TABLE_LEFT_PAD;
+   for(int c = 0; c < TABLE_COLS - 1; c++)
+     {
+      x += col_chars[c] * cw + cw; // column width + gap
+      CreateRectLabel(PANEL_PREFIX + "VL" + IntegerToString(c),
+                      x - (cw / 2), table_y + 1, 1, table_h - 2,
+                      C'70,80,95', C'70,80,95');
+     }
+  }
+
+void CreateSoftButton(const string name, const int x, const int y, const int w, const int h)
+  {
+   if(!ObjectCreate(0, name, OBJ_BUTTON, 0, 0, 0))
+      Print("Failed to create button: ", name);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name, OBJPROP_XSIZE, w);
+   ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+   ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+   ObjectSetString(0, name, OBJPROP_FONT, "Consolas");
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 8);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, C'70,80,95');
+   ObjectSetInteger(0, name, OBJPROP_ZORDER, 2);
+  }
+
+void RefreshStatusLine()
+  {
+   SetLabelText(PANEL_STATUS, StatusLineText());
+  }
+
+void RefreshControlButtons()
+  {
+   if(ObjectFind(0, BTN_PAUSE) >= 0)
+     {
+      ObjectSetString(0, BTN_PAUSE, OBJPROP_TEXT, g_trading_pause ? "Resume" : "Pause");
+      ObjectSetInteger(0, BTN_PAUSE, OBJPROP_BGCOLOR, g_trading_pause ? C'52,96,64' : C'96,60,60');
+      ObjectSetInteger(0, BTN_PAUSE, OBJPROP_COLOR, g_trading_pause ? C'180,220,190' : C'220,190,190');
+     }
+
+   if(ObjectFind(0, BTN_SMA) >= 0)
+     {
+      ObjectSetString(0, BTN_SMA, OBJPROP_TEXT, g_sma_filter ? "SMA ON" : "SMA OFF");
+      ObjectSetInteger(0, BTN_SMA, OBJPROP_BGCOLOR, g_sma_filter ? C'52,86,110' : C'70,70,78');
+      ObjectSetInteger(0, BTN_SMA, OBJPROP_COLOR, g_sma_filter ? C'180,210,230' : C'170,170,178');
+     }
+
+   RefreshStatusLine();
+  }
+
 void CreatePanel()
   {
    DeletePanel();
+
+   string header = FormatTableHeader();
+   int text_w = StringLen(header) * FONT_CHAR_W;
+   if(text_w < 500)
+      text_w = 500;
+
+   // Panel width fits table + equal side padding (no oversized empty background)
+   int table_w = text_w + TABLE_LEFT_PAD * 2;
+   int panel_w = table_w + PANEL_PAD * 2;
+   int table_x = PANEL_X + PANEL_PAD;
+   int table_y = PANEL_Y + 128;
+   int table_h = TABLE_HDR_H + PAIR_COUNT * TABLE_ROW_H + 2;
+   int panel_h = table_y - PANEL_Y + table_h + PANEL_PAD;
 
    ObjectCreate(0, PANEL_BG, OBJ_RECTANGLE_LABEL, 0, 0, 0);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_XDISTANCE, PANEL_X);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_YDISTANCE, PANEL_Y);
-   ObjectSetInteger(0, PANEL_BG, OBJPROP_XSIZE, PANEL_W);
-   ObjectSetInteger(0, PANEL_BG, OBJPROP_YSIZE, PANEL_H);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_XSIZE, panel_w);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_YSIZE, panel_h);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_BGCOLOR, C'24,28,36');
    ObjectSetInteger(0, PANEL_BG, OBJPROP_COLOR, C'70,80,95');
    ObjectSetInteger(0, PANEL_BG, OBJPROP_BORDER_TYPE, BORDER_FLAT);
@@ -539,38 +748,33 @@ void CreatePanel()
    ObjectSetInteger(0, PANEL_BG, OBJPROP_HIDDEN, true);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_ZORDER, 0);
 
-   CreateLabel(PANEL_TITLE, PANEL_X + 8, PANEL_Y + 8, 15, clrWhite);
+   // More breathing room between title and credit
+   CreateLabel(PANEL_TITLE, PANEL_X + PANEL_PAD, PANEL_Y + 10, 15, clrWhite);
    ObjectSetString(0, PANEL_TITLE, OBJPROP_TEXT, "Raven Cost Averaging v3.2");
 
-   CreateLabel(PANEL_CREDIT, PANEL_X + 8, PANEL_Y + 30, 8, C'150,158,170');
+   CreateLabel(PANEL_CREDIT, PANEL_X + PANEL_PAD, PANEL_Y + 40, 8, C'150,158,170');
    ObjectSetString(0, PANEL_CREDIT, OBJPROP_TEXT, "EA developed by Randi Apriliyadi - 2026");
 
-   CreateLabel(PANEL_STATUS, PANEL_X + 8, PANEL_Y + 48, 9, clrWhite);
-   CreateLabel(PANEL_EXPOSURE, PANEL_X + 8, PANEL_Y + 64, 9, clrWhite);
-   CreateLabel(PANEL_TOTAL_FLOAT, PANEL_X + 220, PANEL_Y + 64, 9, clrWhite);
+   CreateLabel(PANEL_STATUS, PANEL_X + PANEL_PAD, PANEL_Y + 62, 9, clrWhite);
+   CreateLabel(PANEL_EXPOSURE, PANEL_X + PANEL_PAD, PANEL_Y + 80, 9, clrWhite);
+   CreateLabel(PANEL_TOTAL_FLOAT, PANEL_X + PANEL_PAD + 200, PANEL_Y + 80, 9, clrWhite);
 
-   if(!ObjectCreate(0, BTN_PAUSE, OBJ_BUTTON, 0, 0, 0))
-      Print("Failed to create pause button");
-   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_XDISTANCE, PANEL_X + 8);
-   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_YDISTANCE, PANEL_Y + 84);
-   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_XSIZE, 120);
-   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_YSIZE, 24);
-   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_SELECTABLE, false);
-   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_HIDDEN, true);
-   ObjectSetString(0, BTN_PAUSE, OBJPROP_FONT, "Consolas");
-   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_FONTSIZE, 9);
-   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_ZORDER, 2);
+   CreateSoftButton(BTN_PAUSE, PANEL_X + PANEL_PAD, PANEL_Y + 102, 72, 18);
+   CreateSoftButton(BTN_SMA, PANEL_X + PANEL_PAD + 80, PANEL_Y + 102, 78, 18);
+   RefreshControlButtons();
 
-   CreateLabel(PANEL_HDR, PANEL_X + 8, PANEL_Y + 116, 9, C'180,190,205');
-   ObjectSetString(0, PANEL_HDR, OBJPROP_TEXT,
-                   StringFormat("%-12s %-8s %6s %5s %4s %4s %9s %9s",
-                                "Symbol", "Magic", "Lot", "Pips", "Buy", "Sell", "Float", "Profit"));
+   CreateTableFrame(table_x, table_y, table_w, table_h);
+
+   CreateLabel(PANEL_HDR, table_x + TABLE_LEFT_PAD, table_y + 3, 9, C'180,190,205');
+   ObjectSetString(0, PANEL_HDR, OBJPROP_TEXT, header);
+   ObjectSetInteger(0, PANEL_HDR, OBJPROP_ZORDER, 2);
 
    for(int i = 0; i < PAIR_COUNT; i++)
      {
       string name = PANEL_PREFIX + "R" + IntegerToString(i);
-      CreateLabel(name, PANEL_X + 8, PANEL_Y + 134 + i * 16, 9, clrWhite);
+      int row_y = table_y + TABLE_HDR_H + 2 + i * TABLE_ROW_H;
+      CreateLabel(name, table_x + TABLE_LEFT_PAD, row_y, 9, clrWhite);
+      ObjectSetInteger(0, name, OBJPROP_ZORDER, 2);
      }
   }
 
@@ -661,18 +865,28 @@ void UpdatePanel()
         }
      }
 
-   string btn_text = g_trading_pause ? "RESUME" : "PAUSE";
+   string btn_text = g_trading_pause ? "Resume" : "Pause";
    if(ObjectGetString(0, BTN_PAUSE, OBJPROP_TEXT) != btn_text)
       ObjectSetString(0, BTN_PAUSE, OBJPROP_TEXT, btn_text);
 
-   color btn_bg = g_trading_pause ? clrDarkGreen : clrFireBrick;
+   color btn_bg = g_trading_pause ? C'52,96,64' : C'96,60,60';
+   color btn_fg = g_trading_pause ? C'180,220,190' : C'220,190,190';
    if((color)ObjectGetInteger(0, BTN_PAUSE, OBJPROP_BGCOLOR) != btn_bg)
       ObjectSetInteger(0, BTN_PAUSE, OBJPROP_BGCOLOR, btn_bg);
-   ObjectSetInteger(0, BTN_PAUSE, OBJPROP_COLOR, clrWhite);
+   if((color)ObjectGetInteger(0, BTN_PAUSE, OBJPROP_COLOR) != btn_fg)
+      ObjectSetInteger(0, BTN_PAUSE, OBJPROP_COLOR, btn_fg);
 
-   SetLabelText(PANEL_STATUS, StringFormat("Pause:%s | SMA Filter:%s",
-                                           g_trading_pause ? "ON" : "OFF",
-                                           UseSmaEntryFilter ? "ON" : "OFF"));
+   string sma_text = g_sma_filter ? "SMA ON" : "SMA OFF";
+   if(ObjectGetString(0, BTN_SMA, OBJPROP_TEXT) != sma_text)
+      ObjectSetString(0, BTN_SMA, OBJPROP_TEXT, sma_text);
+   color sma_bg = g_sma_filter ? C'52,86,110' : C'70,70,78';
+   color sma_fg = g_sma_filter ? C'180,210,230' : C'170,170,178';
+   if((color)ObjectGetInteger(0, BTN_SMA, OBJPROP_BGCOLOR) != sma_bg)
+      ObjectSetInteger(0, BTN_SMA, OBJPROP_BGCOLOR, sma_bg);
+   if((color)ObjectGetInteger(0, BTN_SMA, OBJPROP_COLOR) != sma_fg)
+      ObjectSetInteger(0, BTN_SMA, OBJPROP_COLOR, sma_fg);
+
+   RefreshStatusLine();
 
    SetLabelText(PANEL_EXPOSURE, StringFormat("Layers:%d  Lot:%.2f", layers, lots));
 
@@ -681,16 +895,8 @@ void UpdatePanel()
 
    for(int i = 0; i < PAIR_COUNT; i++)
      {
-      string line = StringFormat("%-12s %-8s %6.2f %5d %4d %4d %9.2f %9.2f",
-                                 g_pairs[i].resolved,
-                                 IntegerToString((int)g_pairs[i].magic),
-                                 g_pairs[i].lot,
-                                 g_pairs[i].pip_step,
-                                 buys[i],
-                                 sells[i],
-                                 floats[i],
-                                 g_pairs[i].closed_profit);
-      SetLabelText(PANEL_PREFIX + "R" + IntegerToString(i), line);
+      SetLabelText(PANEL_PREFIX + "R" + IntegerToString(i),
+                   FormatTableRow(i, buys[i], sells[i], floats[i]));
      }
 
    ChartRedraw(0);
@@ -725,6 +931,7 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    SavePauseState();
+   SaveSmaFilterState();
    EventKillTimer();
    ReleaseSmaHandles();
    DeletePanel();
@@ -742,13 +949,28 @@ void OnTimer()
 
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
   {
-   if(id == CHARTEVENT_OBJECT_CLICK && sparam == BTN_PAUSE)
+   if(id != CHARTEVENT_OBJECT_CLICK)
+      return;
+
+   if(sparam == BTN_PAUSE)
      {
       g_trading_pause = !g_trading_pause;
       ObjectSetInteger(0, BTN_PAUSE, OBJPROP_STATE, false);
       SavePauseState();
-      Print("Trading pause: ", g_trading_pause ? "ON" : "OFF");
-      MaybeUpdatePanel(true);
+      Print("Trading status: ", g_trading_pause ? "Paused" : "Active");
+      RefreshControlButtons();
+      ChartRedraw(0);
+      return;
+     }
+
+   if(sparam == BTN_SMA)
+     {
+      g_sma_filter = !g_sma_filter;
+      ObjectSetInteger(0, BTN_SMA, OBJPROP_STATE, false);
+      SaveSmaFilterState();
+      Print("SMA filter: ", g_sma_filter ? "ON" : "OFF", " TF=", PeriodToShort(SmaTimeframe));
+      RefreshControlButtons();
+      ChartRedraw(0);
      }
   }
 

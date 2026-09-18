@@ -1,6 +1,6 @@
 ﻿# Ignore local/old compiled binaries, keep current EA binary
 *.ex5
-!RAVEN TANAM.ex5
+!Raven Cost Averaging.ex5
 
 # MetaTrader / editor junk
 *.log

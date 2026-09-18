@@ -30,7 +30,11 @@ MetaTrader 5 multi-major grid hedge EA with broker-side Take Profit, chart contr
    ```
    MetaTrader 5\MQL5\Experts\
    ```
-2. Open MetaEditor → Compile (`F7`)
+2. Compile (required before commit/release):
+   ```powershell
+   .\compile.ps1
+   ```
+   Or MetaEditor → Compile (`F7`). Must show **0 errors**.
 3. Restart MetaTrader 5 (or refresh Navigator)
 4. Attach the EA to **any single chart**
 5. Set parameters (pair enable, suffix, lot, pip step), then click **OK**
@@ -66,9 +70,10 @@ Trading always starts **paused** on first attach. Changing inputs keeps the curr
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `UseSmaEntryFilter` | `true` | Initial entry only when M15 bar 0 high/low touches SMA200 |
+| `UseSmaEntryFilter` | `true` | Default SMA200 entry filter (also toggled from panel button) |
+| `SmaTimeframe` | `M15` | Timeframe used for SMA200 touch check |
 
-Applies only to the first Buy+Sell when a pair is flat. Grid layers do not wait for SMA.
+Applies only to the first Buy+Sell when a pair is flat. Grid layers do not wait for SMA. Panel button **SMA ON/OFF** toggles the filter live; changing inputs and confirming OK reloads timeframe and the input default.
 
 ### Default Per Pair
 
@@ -101,10 +106,10 @@ Top-left on the chart:
 
 - Title: **Raven Cost Averaging v3.2**
 - Credit: EA developed by Randi Apriliyadi - 2026
-- Status: Pause / SMA Filter
+- Status: **Active** / **Paused** + SMA ON/OFF and timeframe
 - Layers, Lot, **Total Float** (green if ≥ 0, red if < 0)
-- **PAUSE / RESUME** button
-- Table: `Symbol | Magic | Lot | Pips | Buy | Sell | Float | Profit`
+- Compact **Pause** / **Resume** and **SMA ON** / **SMA OFF** buttons
+- Table sized to fit the panel background (framed grid)
 
 `Profit` is closed/realized P/L for that pair magic. Panel UI refresh is throttled (~250 ms); closed profit history is cached (~1.5 s).
 

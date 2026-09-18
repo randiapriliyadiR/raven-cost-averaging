@@ -1,0 +1,13 @@
+---
+description: Always compile MQL5 EA successfully before any git commit
+alwaysApply: true
+---
+
+# Compile before commit
+
+Never commit changes to this EA unless compile has just succeeded.
+
+1. Run `.\compile.ps1` from the project root.
+2. Proceed with commit **only** if exit code is 0 and the log shows `Result: 0 errors`.
+3. Include the refreshed `Raven Cost Averaging.ex5` in the commit when source changed.
+4. If compile fails, fix errors and re-run `.\compile.ps1` — do not commit broken or uncompiled source.
