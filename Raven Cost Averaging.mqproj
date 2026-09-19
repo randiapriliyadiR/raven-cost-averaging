@@ -3,7 +3,7 @@
   "program_type":"expert",
   "copyright"   :"Randi Apriliyadi",
   "link"        :"https:\/\/github.com\/randiapriliyadiR",
-  "version"     :"3.30",
+  "version"     :"3.40",
   "cpu_architecture" :"0",
   "optimize"    :"1",
   "fpzerocheck" :"1",

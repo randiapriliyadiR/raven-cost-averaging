@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Randi Apriliyadi"
 #property link      "https://github.com/randiapriliyadiR"
-#property version   "3.30"
+#property version   "3.40"
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
@@ -20,22 +20,43 @@
 #define PANEL_CREDIT         "RCA_CREDIT"
 #define PANEL_STATUS         "RCA_STATUS"
 #define PANEL_EXPOSURE       "RCA_EXPOSURE"
+#define PANEL_LOT            "RCA_LOT"
 #define PANEL_TOTAL_FLOAT    "RCA_TOTAL_FLOAT"
-#define PANEL_HDR            "RCA_HDR"
 #define PANEL_TBL            "RCA_TBL"
 #define PANEL_THD            "RCA_THD"
-#define PANEL_X              8
+#define PANEL_X              12
 #define PANEL_Y              12
-#define PANEL_PAD            10
+#define PANEL_PAD            20
 #define PANEL_UI_MS          250
 #define PANEL_HISTORY_MS     1500
 #define GV_PAUSE_KEY         "RCA_PAUSE_STATE"
 #define GV_SMA_KEY           "RCA_SMA_STATE"
-#define TABLE_HDR_H          20
-#define TABLE_ROW_H          18
-#define TABLE_LEFT_PAD       10
+#define TABLE_HDR_H          28
+#define TABLE_ROW_H          26
 #define TABLE_COLS           8
-#define FONT_CHAR_W          7   // Consolas ~9pt pixel width (no Canvas dependency)
+#define TABLE_LINE           1
+#define TABLE_CELL_PAD       10
+#define FONT_UI              "Calibri"
+#define FONT_NUM             "Consolas"
+#define CLR_BG               C'17,19,24'
+#define CLR_CARD             C'24,26,33'
+#define CLR_HEADER           C'30,34,44'
+#define CLR_ROW_A            C'24,26,33'
+#define CLR_ROW_B            C'28,31,40'
+#define CLR_LINE             C'52,56,68'
+#define CLR_TEXT             C'228,230,236'
+#define CLR_MUTED            C'138,146,160'
+#define CLR_ACCENT           C'196,164,98'
+#define CLR_POS              C'92,196,148'
+#define CLR_NEG              C'224,118,112'
+#define CLR_BTN_GO_BG        C'42,78,62'
+#define CLR_BTN_GO_FG        C'176,214,190'
+#define CLR_BTN_STOP_BG      C'82,48,50'
+#define CLR_BTN_STOP_FG      C'220,188,186'
+#define CLR_BTN_SMA_ON_BG    C'42,68,92'
+#define CLR_BTN_SMA_ON_FG    C'176,204,224'
+#define CLR_BTN_SMA_OFF_BG   C'48,50,58'
+#define CLR_BTN_SMA_OFF_FG   C'160,164,174'
 
 //--- Max Layer Scope
 enum ENUM_MAX_LAYER_SCOPE
@@ -159,12 +180,14 @@ void RefreshClosedProfits();
 void SetPairAction(const int pair_index, const string action);
 void SetLabelText(const string name, const string text);
 void SetLabelColor(const string name, const color clr);
-void CreateLabel(const string name, const int x, const int y, const int fontsize, const color clr);
+void CreateLabel(const string name, const int x, const int y, const int fontsize, const color clr, const string font);
 void CreateRectLabel(const string name, const int x, const int y, const int w, const int h,
                      const color bg, const color border);
 void CreateTableFrame(const int table_x, const int table_y, const int table_w, const int table_h);
-string FormatTableHeader();
-string FormatTableRow(const int pair_index, const int buys, const int sells, const double pf);
+int TableColX(const int table_x, const int col);
+int TableWidth();
+string CellName(const int row, const int col);
+string MoneyText(const double value);
 string PauseGvName();
 string SmaGvName();
 string PeriodToShort(const ENUM_TIMEFRAMES tf);
@@ -219,7 +242,7 @@ string PeriodToShort(const ENUM_TIMEFRAMES tf)
 
 string StatusLineText()
   {
-   return StringFormat("Status:%s | SMA:%s %s",
+   return StringFormat("Status  %s      SMA  %s  %s",
                        g_trading_pause ? "Paused" : "Active",
                        g_sma_filter ? "ON" : "OFF",
                        PeriodToShort(SmaTimeframe));
@@ -584,7 +607,7 @@ void SetLabelColor(const string name, const color clr)
       ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
   }
 
-void CreateLabel(const string name, const int x, const int y, const int fontsize, const color clr)
+void CreateLabel(const string name, const int x, const int y, const int fontsize, const color clr, const string font)
   {
    ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
    ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
@@ -592,10 +615,10 @@ void CreateLabel(const string name, const int x, const int y, const int fontsize
    ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
    ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontsize);
-   ObjectSetString(0, name, OBJPROP_FONT, "Consolas");
+   ObjectSetString(0, name, OBJPROP_FONT, font);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
-   ObjectSetInteger(0, name, OBJPROP_ZORDER, 1);
+   ObjectSetInteger(0, name, OBJPROP_ZORDER, 2);
   }
 
 void CreateRectLabel(const string name, const int x, const int y, const int w, const int h,
@@ -617,61 +640,76 @@ void CreateRectLabel(const string name, const int x, const int y, const int w, c
    ObjectSetInteger(0, name, OBJPROP_ZORDER, 0);
   }
 
-string FormatTableHeader()
+int TableColWidth(const int col)
   {
-   return StringFormat("%-12s %-8s %6s %5s %4s %4s %9s %10s",
-                       "Symbol", "Magic", "Lot", "Pips", "Buy", "Sell", "Float", "Profit");
+   switch(col)
+     {
+      case 0: return 124; // Symbol
+      case 1: return 84;  // Magic
+      case 2: return 64;  // Lot
+      case 3: return 58;  // Pips
+      case 4: return 52;  // Buy
+      case 5: return 52;  // Sell
+      case 6: return 100; // Float
+      case 7: return 100; // Profit
+     }
+   return 56;
   }
 
-string FormatTableRow(const int pair_index, const int buys, const int sells, const double pf)
+int TableWidth()
   {
-   return StringFormat("%-12s %-8s %6.2f %5d %4d %4d %9.2f %10.2f",
-                       g_pairs[pair_index].resolved,
-                       IntegerToString((int)g_pairs[pair_index].magic),
-                       g_pairs[pair_index].lot,
-                       g_pairs[pair_index].pip_step,
-                       buys,
-                       sells,
-                       pf,
-                       g_pairs[pair_index].closed_profit);
+   int w = TABLE_LINE;
+   for(int c = 0; c < TABLE_COLS; c++)
+      w += TableColWidth(c) + TABLE_LINE;
+   return w;
+  }
+
+int TableColX(const int table_x, const int col)
+  {
+   int x = table_x + TABLE_LINE;
+   for(int c = 0; c < col; c++)
+      x += TableColWidth(c) + TABLE_LINE;
+   return x;
+  }
+
+string CellName(const int row, const int col)
+  {
+   return PANEL_PREFIX + "C" + IntegerToString(row) + "_" + IntegerToString(col);
+  }
+
+string MoneyText(const double value)
+  {
+   return StringFormat("%.2f", value);
   }
 
 void CreateTableFrame(const int table_x, const int table_y, const int table_w, const int table_h)
   {
-   // Outer frame + fill
-   CreateRectLabel(PANEL_TBL, table_x, table_y, table_w, table_h, C'28,32,40', C'100,112,128');
+   CreateRectLabel(PANEL_TBL, table_x, table_y, table_w, table_h, CLR_CARD, CLR_LINE);
 
-   // Header band
-   CreateRectLabel(PANEL_THD, table_x + 1, table_y + 1, table_w - 2, TABLE_HDR_H - 1,
-                   C'42,48,58', C'42,48,58');
+   CreateRectLabel(PANEL_THD, table_x + TABLE_LINE, table_y + TABLE_LINE,
+                   table_w - TABLE_LINE * 2, TABLE_HDR_H,
+                   CLR_HEADER, CLR_HEADER);
 
-   // Horizontal row lines (below header + after each data row)
-   for(int i = 0; i <= PAIR_COUNT; i++)
+   for(int i = 0; i < PAIR_COUNT; i++)
      {
-      int y = table_y + TABLE_HDR_H + i * TABLE_ROW_H;
-      CreateRectLabel(PANEL_PREFIX + "HL" + IntegerToString(i),
-                      table_x + 1, y, table_w - 2, 1,
-                      C'70,80,95', C'70,80,95');
+      int y = table_y + TABLE_LINE + TABLE_HDR_H + i * TABLE_ROW_H;
+      color row_bg = ((i % 2) == 0) ? CLR_ROW_A : CLR_ROW_B;
+      CreateRectLabel(PANEL_PREFIX + "RB" + IntegerToString(i),
+                      table_x + TABLE_LINE, y, table_w - TABLE_LINE * 2, TABLE_ROW_H,
+                      row_bg, row_bg);
      }
 
-   // Vertical column guides — widths match FormatTableHeader gaps
-   int cw = FONT_CHAR_W;
-   int col_chars[TABLE_COLS];
-   col_chars[0] = 12;
-   col_chars[1] = 8;
-   col_chars[2] = 6;
-   col_chars[3] = 5;
-   col_chars[4] = 4;
-   col_chars[5] = 4;
-   col_chars[6] = 9;
-   col_chars[7] = 10;
-   int x = table_x + TABLE_LEFT_PAD;
-   for(int c = 0; c < TABLE_COLS - 1; c++)
+   CreateRectLabel(PANEL_PREFIX + "HL0",
+                   table_x + TABLE_LINE, table_y + TABLE_LINE + TABLE_HDR_H,
+                   table_w - TABLE_LINE * 2, TABLE_LINE,
+                   CLR_LINE, CLR_LINE);
+
+   for(int c = 1; c < TABLE_COLS; c++)
      {
-      x += col_chars[c] * cw + cw; // column width + gap
+      int x = TableColX(table_x, c) - TABLE_LINE;
       CreateRectLabel(PANEL_PREFIX + "VL" + IntegerToString(c),
-                      x - (cw / 2), table_y + 1, 1, table_h - 2,
-                      C'70,80,95', C'70,80,95');
+                      x, table_y + TABLE_LINE, TABLE_LINE, table_h - TABLE_LINE * 2,
+                      CLR_LINE, CLR_LINE);
      }
   }
 
@@ -686,10 +724,10 @@ void CreateSoftButton(const string name, const int x, const int y, const int w, 
    ObjectSetInteger(0, name, OBJPROP_YSIZE, h);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
-   ObjectSetString(0, name, OBJPROP_FONT, "Consolas");
-   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 8);
-   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, C'70,80,95');
-   ObjectSetInteger(0, name, OBJPROP_ZORDER, 2);
+   ObjectSetString(0, name, OBJPROP_FONT, FONT_UI);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 9);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_COLOR, CLR_LINE);
+   ObjectSetInteger(0, name, OBJPROP_ZORDER, 3);
   }
 
 void RefreshStatusLine()
@@ -702,15 +740,15 @@ void RefreshControlButtons()
    if(ObjectFind(0, BTN_PAUSE) >= 0)
      {
       ObjectSetString(0, BTN_PAUSE, OBJPROP_TEXT, g_trading_pause ? "Resume" : "Pause");
-      ObjectSetInteger(0, BTN_PAUSE, OBJPROP_BGCOLOR, g_trading_pause ? C'52,96,64' : C'96,60,60');
-      ObjectSetInteger(0, BTN_PAUSE, OBJPROP_COLOR, g_trading_pause ? C'180,220,190' : C'220,190,190');
+      ObjectSetInteger(0, BTN_PAUSE, OBJPROP_BGCOLOR, g_trading_pause ? CLR_BTN_GO_BG : CLR_BTN_STOP_BG);
+      ObjectSetInteger(0, BTN_PAUSE, OBJPROP_COLOR, g_trading_pause ? CLR_BTN_GO_FG : CLR_BTN_STOP_FG);
      }
 
    if(ObjectFind(0, BTN_SMA) >= 0)
      {
       ObjectSetString(0, BTN_SMA, OBJPROP_TEXT, g_sma_filter ? "SMA ON" : "SMA OFF");
-      ObjectSetInteger(0, BTN_SMA, OBJPROP_BGCOLOR, g_sma_filter ? C'52,86,110' : C'70,70,78');
-      ObjectSetInteger(0, BTN_SMA, OBJPROP_COLOR, g_sma_filter ? C'180,210,230' : C'170,170,178');
+      ObjectSetInteger(0, BTN_SMA, OBJPROP_BGCOLOR, g_sma_filter ? CLR_BTN_SMA_ON_BG : CLR_BTN_SMA_OFF_BG);
+      ObjectSetInteger(0, BTN_SMA, OBJPROP_COLOR, g_sma_filter ? CLR_BTN_SMA_ON_FG : CLR_BTN_SMA_OFF_FG);
      }
 
    RefreshStatusLine();
@@ -720,17 +758,11 @@ void CreatePanel()
   {
    DeletePanel();
 
-   string header = FormatTableHeader();
-   int text_w = StringLen(header) * FONT_CHAR_W;
-   if(text_w < 500)
-      text_w = 500;
-
-   // Panel width fits table + equal side padding (no oversized empty background)
-   int table_w = text_w + TABLE_LEFT_PAD * 2;
-   int panel_w = table_w + PANEL_PAD * 2;
+   int table_w = TableWidth();
+   int table_h = TABLE_LINE + TABLE_HDR_H + PAIR_COUNT * TABLE_ROW_H + TABLE_LINE;
    int table_x = PANEL_X + PANEL_PAD;
-   int table_y = PANEL_Y + 128;
-   int table_h = TABLE_HDR_H + PAIR_COUNT * TABLE_ROW_H + 2;
+   int table_y = PANEL_Y + 168;
+   int panel_w = table_w + PANEL_PAD * 2;
    int panel_h = table_y - PANEL_Y + table_h + PANEL_PAD;
 
    ObjectCreate(0, PANEL_BG, OBJ_RECTANGLE_LABEL, 0, 0, 0);
@@ -739,8 +771,8 @@ void CreatePanel()
    ObjectSetInteger(0, PANEL_BG, OBJPROP_YDISTANCE, PANEL_Y);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_XSIZE, panel_w);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_YSIZE, panel_h);
-   ObjectSetInteger(0, PANEL_BG, OBJPROP_BGCOLOR, C'24,28,36');
-   ObjectSetInteger(0, PANEL_BG, OBJPROP_COLOR, C'70,80,95');
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_BGCOLOR, CLR_BG);
+   ObjectSetInteger(0, PANEL_BG, OBJPROP_COLOR, CLR_LINE);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_BORDER_TYPE, BORDER_FLAT);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_WIDTH, 1);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_BACK, false);
@@ -748,33 +780,49 @@ void CreatePanel()
    ObjectSetInteger(0, PANEL_BG, OBJPROP_HIDDEN, true);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_ZORDER, 0);
 
-   // More breathing room between title and credit
-   CreateLabel(PANEL_TITLE, PANEL_X + PANEL_PAD, PANEL_Y + 10, 15, clrWhite);
-   ObjectSetString(0, PANEL_TITLE, OBJPROP_TEXT, "Raven Cost Averaging v3.3");
+   CreateLabel(PANEL_TITLE, PANEL_X + PANEL_PAD, PANEL_Y + 14, 16, CLR_TEXT, "Arial Bold");
+   ObjectSetString(0, PANEL_TITLE, OBJPROP_TEXT, "RAVEN COST AVERAGING  V3.4");
 
-   CreateLabel(PANEL_CREDIT, PANEL_X + PANEL_PAD, PANEL_Y + 40, 8, C'150,158,170');
+   CreateLabel(PANEL_CREDIT, PANEL_X + PANEL_PAD, PANEL_Y + 44, 9, CLR_MUTED, FONT_UI);
    ObjectSetString(0, PANEL_CREDIT, OBJPROP_TEXT, "EA developed by Randi Apriliyadi - 2026");
 
-   CreateLabel(PANEL_STATUS, PANEL_X + PANEL_PAD, PANEL_Y + 62, 9, clrWhite);
-   CreateLabel(PANEL_EXPOSURE, PANEL_X + PANEL_PAD, PANEL_Y + 80, 9, clrWhite);
-   CreateLabel(PANEL_TOTAL_FLOAT, PANEL_X + PANEL_PAD + 200, PANEL_Y + 80, 9, clrWhite);
+   CreateLabel(PANEL_STATUS, PANEL_X + PANEL_PAD, PANEL_Y + 78, 10, CLR_TEXT, FONT_UI);
+   CreateLabel(PANEL_EXPOSURE, PANEL_X + PANEL_PAD, PANEL_Y + 102, 10, CLR_MUTED, FONT_UI);
+   CreateLabel(PANEL_LOT, PANEL_X + PANEL_PAD + 130, PANEL_Y + 102, 10, CLR_MUTED, FONT_UI);
+   CreateLabel(PANEL_TOTAL_FLOAT, PANEL_X + PANEL_PAD + 250, PANEL_Y + 102, 10, CLR_TEXT, FONT_UI);
 
-   CreateSoftButton(BTN_PAUSE, PANEL_X + PANEL_PAD, PANEL_Y + 102, 72, 18);
-   CreateSoftButton(BTN_SMA, PANEL_X + PANEL_PAD + 80, PANEL_Y + 102, 78, 18);
+   CreateSoftButton(BTN_PAUSE, PANEL_X + PANEL_PAD, PANEL_Y + 130, 88, 26);
+   CreateSoftButton(BTN_SMA, PANEL_X + PANEL_PAD + 104, PANEL_Y + 130, 88, 26);
    RefreshControlButtons();
 
    CreateTableFrame(table_x, table_y, table_w, table_h);
 
-   CreateLabel(PANEL_HDR, table_x + TABLE_LEFT_PAD, table_y + 3, 9, C'180,190,205');
-   ObjectSetString(0, PANEL_HDR, OBJPROP_TEXT, header);
-   ObjectSetInteger(0, PANEL_HDR, OBJPROP_ZORDER, 2);
+   string headers[TABLE_COLS];
+   headers[0] = "Symbol";
+   headers[1] = "Magic";
+   headers[2] = "Lot";
+   headers[3] = "Pips";
+   headers[4] = "Buy";
+   headers[5] = "Sell";
+   headers[6] = "Float";
+   headers[7] = "Profit";
+
+   int header_y = table_y + TABLE_LINE + 6;
+   for(int c = 0; c < TABLE_COLS; c++)
+     {
+      string hname = PANEL_PREFIX + "H" + IntegerToString(c);
+      CreateLabel(hname, TableColX(table_x, c) + TABLE_CELL_PAD, header_y, 9, CLR_MUTED, FONT_UI);
+      ObjectSetString(0, hname, OBJPROP_TEXT, headers[c]);
+     }
 
    for(int i = 0; i < PAIR_COUNT; i++)
      {
-      string name = PANEL_PREFIX + "R" + IntegerToString(i);
-      int row_y = table_y + TABLE_HDR_H + 2 + i * TABLE_ROW_H;
-      CreateLabel(name, table_x + TABLE_LEFT_PAD, row_y, 9, clrWhite);
-      ObjectSetInteger(0, name, OBJPROP_ZORDER, 2);
+      int row_y = table_y + TABLE_LINE + TABLE_HDR_H + i * TABLE_ROW_H + 5;
+      for(int c = 0; c < TABLE_COLS; c++)
+        {
+         string font = (c <= 1) ? FONT_UI : FONT_NUM;
+         CreateLabel(CellName(i, c), TableColX(table_x, c) + TABLE_CELL_PAD, row_y, 9, CLR_TEXT, font);
+        }
      }
   }
 
@@ -865,38 +913,25 @@ void UpdatePanel()
         }
      }
 
-   string btn_text = g_trading_pause ? "Resume" : "Pause";
-   if(ObjectGetString(0, BTN_PAUSE, OBJPROP_TEXT) != btn_text)
-      ObjectSetString(0, BTN_PAUSE, OBJPROP_TEXT, btn_text);
+   RefreshControlButtons();
 
-   color btn_bg = g_trading_pause ? C'52,96,64' : C'96,60,60';
-   color btn_fg = g_trading_pause ? C'180,220,190' : C'220,190,190';
-   if((color)ObjectGetInteger(0, BTN_PAUSE, OBJPROP_BGCOLOR) != btn_bg)
-      ObjectSetInteger(0, BTN_PAUSE, OBJPROP_BGCOLOR, btn_bg);
-   if((color)ObjectGetInteger(0, BTN_PAUSE, OBJPROP_COLOR) != btn_fg)
-      ObjectSetInteger(0, BTN_PAUSE, OBJPROP_COLOR, btn_fg);
-
-   string sma_text = g_sma_filter ? "SMA ON" : "SMA OFF";
-   if(ObjectGetString(0, BTN_SMA, OBJPROP_TEXT) != sma_text)
-      ObjectSetString(0, BTN_SMA, OBJPROP_TEXT, sma_text);
-   color sma_bg = g_sma_filter ? C'52,86,110' : C'70,70,78';
-   color sma_fg = g_sma_filter ? C'180,210,230' : C'170,170,178';
-   if((color)ObjectGetInteger(0, BTN_SMA, OBJPROP_BGCOLOR) != sma_bg)
-      ObjectSetInteger(0, BTN_SMA, OBJPROP_BGCOLOR, sma_bg);
-   if((color)ObjectGetInteger(0, BTN_SMA, OBJPROP_COLOR) != sma_fg)
-      ObjectSetInteger(0, BTN_SMA, OBJPROP_COLOR, sma_fg);
-
-   RefreshStatusLine();
-
-   SetLabelText(PANEL_EXPOSURE, StringFormat("Layers:%d  Lot:%.2f", layers, lots));
-
-   SetLabelText(PANEL_TOTAL_FLOAT, StringFormat("Total Float:%.2f", floating));
-   SetLabelColor(PANEL_TOTAL_FLOAT, floating >= 0.0 ? clrLime : clrTomato);
+   SetLabelText(PANEL_EXPOSURE, StringFormat("Layers  %d", layers));
+   SetLabelText(PANEL_LOT, StringFormat("Lot  %s", MoneyText(lots)));
+   SetLabelText(PANEL_TOTAL_FLOAT, StringFormat("Total Float  %s", MoneyText(floating)));
+   SetLabelColor(PANEL_TOTAL_FLOAT, floating >= 0.0 ? CLR_POS : CLR_NEG);
 
    for(int i = 0; i < PAIR_COUNT; i++)
      {
-      SetLabelText(PANEL_PREFIX + "R" + IntegerToString(i),
-                   FormatTableRow(i, buys[i], sells[i], floats[i]));
+      SetLabelText(CellName(i, 0), g_pairs[i].resolved);
+      SetLabelText(CellName(i, 1), IntegerToString((int)g_pairs[i].magic));
+      SetLabelText(CellName(i, 2), MoneyText(g_pairs[i].lot));
+      SetLabelText(CellName(i, 3), IntegerToString(g_pairs[i].pip_step));
+      SetLabelText(CellName(i, 4), IntegerToString(buys[i]));
+      SetLabelText(CellName(i, 5), IntegerToString(sells[i]));
+      SetLabelText(CellName(i, 6), MoneyText(floats[i]));
+      SetLabelText(CellName(i, 7), MoneyText(g_pairs[i].closed_profit));
+      SetLabelColor(CellName(i, 6), floats[i] >= 0.0 ? CLR_POS : CLR_NEG);
+      SetLabelColor(CellName(i, 7), g_pairs[i].closed_profit >= 0.0 ? CLR_POS : CLR_NEG);
      }
 
    ChartRedraw(0);
