@@ -63,8 +63,9 @@ Requirements:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `ShowPanel` | `true` | Show/hide chart panel |
+| `ForceActive` | `false` | Start trading immediately. Use `true` in the tester, where the panel button cannot be clicked |
 
-Trading always starts **paused** on first attach. Changing inputs keeps the current Pause/Resume state. While paused: no new entries/layers; TP sync and global TP still run.
+Trading starts **paused** on first attach when `ForceActive` is false. Changing other inputs keeps the current Pause/Resume state. While paused: no new entries/layers; TP sync and global TP still run.
 
 ### Entry Filter
 

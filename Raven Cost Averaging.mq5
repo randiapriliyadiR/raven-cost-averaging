@@ -90,6 +90,7 @@ input string               SymbolSuffix           = "c";                 // Symb
 //--- Operations
 input string               InpSectionOps          = "=== Operations ===";
 input bool                 ShowPanel              = true;                // Show Panel
+input bool                 ForceActive            = false;               // Force Active (start trading; for tester)
 
 //--- Entry Filter
 input string               InpSectionEntry        = "=== Entry Filter ===";
@@ -272,6 +273,9 @@ void RestoreOrInitPauseState()
      }
    else
       g_trading_pause = true;
+
+   if(ForceActive)
+      g_trading_pause = false;
   }
 
 void ApplySmaFilterFromInput()
