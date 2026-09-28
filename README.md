@@ -2,7 +2,7 @@
 
 MetaTrader 5 multi-major grid hedge EA with broker-side Take Profit, chart control panel, and optional SMA200 M15 entry filter.
 
-**Version:** 3.4  
+**Version:** 3.5  
 **Platform:** MetaTrader 5 (MQL5)  
 **Author:** [Randi Apriliyadi](https://github.com/randiapriliyadiR)
 
@@ -105,7 +105,7 @@ Changing any input and confirming OK reloads runtime settings and refreshes the 
 
 Top-left on the chart:
 
-- Title: **RAVEN COST AVERAGING V3.4**
+- Title: **RAVEN COST AVERAGING V3.5**
 - Credit: EA developed by Randi Apriliyadi - 2026
 - Status: **Active** / **Paused** + SMA ON/OFF and timeframe
 - Layers, Lot, **Total Float** (green if ≥ 0, red if < 0)
