@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Randi Apriliyadi"
 #property link      "https://github.com/randiapriliyadiR"
-#property version   "3.60"
+#property version   "3.70"
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
@@ -13,6 +13,7 @@
 #define PAIR_COUNT           17
 #define PANEL_PREFIX         "RCA_"
 #define BTN_PAUSE            "RCA_BTN_PAUSE"
+#define BTN_PIVOT            "RCA_BTN_PIVOT"
 #define PANEL_BG             "RCA_BG"
 #define PANEL_TITLE          "RCA_TITLE"
 #define PANEL_CREDIT         "RCA_CREDIT"
@@ -29,6 +30,7 @@
 #define PANEL_UI_MS          250
 #define PANEL_HISTORY_MS     1500
 #define GV_PAUSE_KEY         "RCA_PAUSE_STATE"
+#define GV_PIVOT_KEY         "RCA_PIVOT_STATE"
 #define PIVOT_ENTRY_PIPS     2.0
 #define TABLE_HDR_H          28
 #define TABLE_ROW_H          26
@@ -87,6 +89,10 @@ input string               InpSectionOps          = "=== Operations ===";
 input bool                 ShowPanel              = true;                // Show Panel
 input string               PanelRemark            = "";                  // Panel Remark (optional)
 input bool                 ForceActive            = false;               // Force Active (start trading; for tester)
+
+//--- Entry Filter
+input string               InpSectionEntry        = "=== Entry Filter ===";
+input bool                 UsePivotEntryFilter    = false;               // Use Daily Pivot Entry Filter
 
 //--- EURUSD
 input string               InpSectionEURUSD       = "=== EURUSD ===";
@@ -212,6 +218,7 @@ CTrade         trade;
 CPositionInfo  m_position;
 PairConfig     g_pairs[PAIR_COUNT];
 bool           g_trading_pause = true;
+bool           g_pivot_filter = false;
 uint           g_last_panel_ms = 0;
 uint           g_last_history_ms = 0;
 const int      TRADE_RETRY_COUNT = 2;
@@ -249,9 +256,12 @@ int TableWidth();
 string CellName(const int row, const int col);
 string MoneyText(const double value);
 string PauseGvName();
+string PivotGvName();
 string StatusLineText();
 void SavePauseState();
+void SavePivotFilterState();
 void RestoreOrInitPauseState();
+void ApplyPivotFilterFromInput();
 void CreateSoftButton(const string name, const int x, const int y, const int w, const int h);
 void RefreshControlButtons();
 void RefreshStatusLine();
@@ -262,14 +272,31 @@ string PauseGvName()
    return GV_PAUSE_KEY + "_" + IntegerToString((int)ChartID());
   }
 
+string PivotGvName()
+  {
+   return GV_PIVOT_KEY + "_" + IntegerToString((int)ChartID());
+  }
+
 string StatusLineText()
   {
-   return StringFormat("Status  %s", g_trading_pause ? "Paused" : "Active");
+   return StringFormat("Status  %s      Pivot  %s",
+                       g_trading_pause ? "Paused" : "Active",
+                       g_pivot_filter ? "ON" : "OFF");
   }
 
 void SavePauseState()
   {
    GlobalVariableSet(PauseGvName(), g_trading_pause ? 1.0 : 0.0);
+  }
+
+void SavePivotFilterState()
+  {
+   GlobalVariableSet(PivotGvName(), g_pivot_filter ? 1.0 : 0.0);
+  }
+
+void ApplyPivotFilterFromInput()
+  {
+   g_pivot_filter = UsePivotEntryFilter;
   }
 
 void RestoreOrInitPauseState()
@@ -458,6 +485,9 @@ bool MidPivotGap(const string symbol, double &gap_pips)
 
 bool IsDailyPivotTouched(const int pair_index)
   {
+   if(!g_pivot_filter)
+      return true;
+
    double gap_pips = 0.0;
    if(!MidPivotGap(g_pairs[pair_index].resolved, gap_pips))
       return false;
@@ -621,6 +651,7 @@ void ResolvePairSymbols()
 
 void ApplyRuntimeSettings()
   {
+   ApplyPivotFilterFromInput();
    InitPairConfigs();
    ResolvePairSymbols();
 
@@ -828,6 +859,13 @@ void RefreshControlButtons()
       ObjectSetInteger(0, BTN_PAUSE, OBJPROP_COLOR, g_trading_pause ? CLR_BTN_GO_FG : CLR_BTN_STOP_FG);
      }
 
+   if(ObjectFind(0, BTN_PIVOT) >= 0)
+     {
+      ObjectSetString(0, BTN_PIVOT, OBJPROP_TEXT, g_pivot_filter ? "Pivot ON" : "Pivot OFF");
+      ObjectSetInteger(0, BTN_PIVOT, OBJPROP_BGCOLOR, g_pivot_filter ? CLR_BTN_GO_BG : CLR_BTN_STOP_BG);
+      ObjectSetInteger(0, BTN_PIVOT, OBJPROP_COLOR, g_pivot_filter ? CLR_BTN_GO_FG : CLR_BTN_STOP_FG);
+     }
+
    RefreshStatusLine();
   }
 
@@ -859,7 +897,7 @@ void CreatePanel()
    ObjectSetInteger(0, PANEL_BG, OBJPROP_ZORDER, 0);
 
    CreateLabel(PANEL_TITLE, PANEL_X + PANEL_PAD, PANEL_Y + 14, 16, CLR_GOLD, "Arial Black");
-   ObjectSetString(0, PANEL_TITLE, OBJPROP_TEXT, "RAVEN COST AVERAGING  V3.6");
+   ObjectSetString(0, PANEL_TITLE, OBJPROP_TEXT, "RAVEN COST AVERAGING  V3.7");
 
    string remark = RemarkText();
    if(remark != "")
@@ -878,6 +916,7 @@ void CreatePanel()
    CreateLabel(PANEL_TOTAL_FLOAT, PANEL_X + PANEL_PAD + 380, PANEL_Y + 102, 10, CLR_TEXT, FONT_UI);
 
    CreateSoftButton(BTN_PAUSE, PANEL_X + PANEL_PAD, PANEL_Y + 130, 88, 26);
+   CreateSoftButton(BTN_PIVOT, PANEL_X + PANEL_PAD + 104, PANEL_Y + 130, 96, 26);
    RefreshControlButtons();
 
    CreateTableFrame(table_x, table_y, table_w, table_h, rows);
@@ -1067,6 +1106,7 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    SavePauseState();
+   SavePivotFilterState();
    EventKillTimer();
    DeletePanel();
   }
@@ -1092,6 +1132,17 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       ObjectSetInteger(0, BTN_PAUSE, OBJPROP_STATE, false);
       SavePauseState();
       Print("Trading status: ", g_trading_pause ? "Paused" : "Active");
+      RefreshControlButtons();
+      ChartRedraw(0);
+      return;
+     }
+
+   if(sparam == BTN_PIVOT)
+     {
+      g_pivot_filter = !g_pivot_filter;
+      ObjectSetInteger(0, BTN_PIVOT, OBJPROP_STATE, false);
+      SavePivotFilterState();
+      Print("Pivot filter: ", g_pivot_filter ? "ON" : "OFF");
       RefreshControlButtons();
       ChartRedraw(0);
      }

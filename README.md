@@ -2,7 +2,7 @@
 
 MetaTrader 5 multi-major grid hedge EA with broker-side Take Profit, chart control panel, and a daily-pivot filter for the first entry.
 
-**Version:** 3.6  
+**Version:** 3.7  
 **Platform:** MetaTrader 5 (MQL5)  
 **Author:** [Randi Apriliyadi](https://github.com/randiapriliyadiR)
 
@@ -14,8 +14,8 @@ MetaTrader 5 multi-major grid hedge EA with broker-side Take Profit, chart contr
 - **Lot & Pip Step per pair** — independent spacing and lot size
 - **Magic number per pair** — isolated positions and closed profit tracking
 - **Symbol Suffix** — works with cent accounts (`c`) or other broker suffixes
-- **Daily pivot entry** — initial Buy+Sell only when the live mid price is within 2 pips of yesterday’s daily pivot `(High + Low + Close) / 3`; grid layers unrestricted
-- **Chart panel** — title, pause control, layers/lot/total float, per-pair table
+- **Daily pivot entry** — optional; when ON, initial Buy+Sell only when the live mid price is within 2 pips of yesterday’s daily pivot `(High + Low + Close) / 3`; default OFF; grid layers unrestricted
+- **Chart panel** — title, pause and pivot controls, layers/lot/total float, per-pair table
 - **Max Layers** — optional per-direction cap (`0` = unlimited)
 - **Trading pause** — starts paused; resume from chart button (no input)
 - **Broker-side TP** — remains active even if EA is detached
@@ -70,7 +70,11 @@ Trading starts **paused** on first attach when `ForceActive` is false. Changing 
 
 ### Entry filter
 
-There is no SMA or timeframe input. For a pair that is flat (no Buy and no Sell), the first Buy+Sell opens only when the live mid price is within 2 pips of yesterday’s daily pivot:
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `UsePivotEntryFilter` | `false` | Daily pivot filter for the first Buy+Sell. Also toggled from the panel button |
+
+When the filter is OFF, a flat pair can open the first Buy+Sell without waiting for the pivot. When ON, entry waits until the live mid price is within 2 pips of yesterday’s daily pivot:
 
 ```
 pivot = (High + Low + Close) of yesterday’s Daily candle / 3
@@ -78,7 +82,7 @@ mid   = (Bid + Ask) / 2
 entry = absolute distance from mid to pivot <= 2 pips
 ```
 
-A wick that touched the pivot earlier in the minute does not count. The orders are sent only while the live price is still inside that 2-pip band. If yesterday’s high, low, or close is missing, the pair waits. After the basket closes, a new initial entry waits until price returns to that band. Grid layers do not use this filter.
+A wick that touched the pivot earlier in the minute does not count. The orders are sent only while the live price is still inside that 2-pip band. If yesterday’s high, low, or close is missing while the filter is ON, the pair waits. After the basket closes, a new initial entry waits until price returns to that band when the filter is ON. Grid layers do not use this filter. Confirming OK on inputs reloads the input default; the panel **Pivot ON/OFF** button toggles it live.
 
 ### Default Per Pair
 
@@ -125,14 +129,14 @@ The panel count on the left is every open position of this EA. The text after it
 
 Top-left on the chart:
 
-- Title: **RAVEN COST AVERAGING V3.6** in gold
+- Title: **RAVEN COST AVERAGING V3.7** in gold
 - Optional **Panel Remark** at the top-right, red, hidden when the input is empty
 - Credit: EA developed by Randi Apriliyadi - 2026
-- Status: **Active** / **Paused**
+- Status: **Active** / **Paused** and **Pivot ON** / **OFF**
 - **Layers** (open positions of this EA, plus the per-side cap and its scope when a limit is set), Lot, **Total Float** (green if ≥ 0, red if < 0)
-- Compact **Pause** / **Resume** button
+- Compact **Pause** / **Resume** and **Pivot ON** / **Pivot OFF** buttons
 - Table sized to the enabled pairs only
-- **Pivot** column: while a pair is flat, signed distance in pips from the mid price to yesterday’s daily pivot (`+` = price above the pivot, `-` = price below). The first entry fires when that absolute value is 2.0 or less. A basket in progress shows `-` because the filter no longer applies
+- **Pivot** column: while a pair is flat, signed distance in pips from the mid price to yesterday’s daily pivot (`+` = price above the pivot, `-` = price below). When the filter is ON, the first entry fires when that absolute value is 2.0 or less. A basket in progress shows `-` because the filter no longer applies
 
 `Profit` is closed/realized P/L for that pair magic. `Pips` is that pair’s grid step, not the distance to the pivot. Panel UI refresh is throttled (~250 ms); closed profit history is cached (~1.5 s).
 
@@ -151,7 +155,7 @@ OnTick / OnTimer
        └─ Manage Grid
             ├─ Flat
             │    ├─ Paused? → skip
-            │    ├─ Live mid more than 2 pips from yesterday’s pivot? → wait
+            │    ├─ Pivot filter ON & live mid more than 2 pips away? → wait
             │    └─ Open Buy + Sell
             ├─ Has positions → Sync TP
             ├─ (!Paused) Grid layers (no pivot filter)
