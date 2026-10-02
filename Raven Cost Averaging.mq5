@@ -5,16 +5,14 @@
 //+------------------------------------------------------------------+
 #property copyright "Randi Apriliyadi"
 #property link      "https://github.com/randiapriliyadiR"
-#property version   "3.50"
+#property version   "3.60"
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
 
-#define PAIR_COUNT           7
-#define SMA_PERIOD           200
+#define PAIR_COUNT           17
 #define PANEL_PREFIX         "RCA_"
 #define BTN_PAUSE            "RCA_BTN_PAUSE"
-#define BTN_SMA              "RCA_BTN_SMA"
 #define PANEL_BG             "RCA_BG"
 #define PANEL_TITLE          "RCA_TITLE"
 #define PANEL_CREDIT         "RCA_CREDIT"
@@ -22,6 +20,7 @@
 #define PANEL_EXPOSURE       "RCA_EXPOSURE"
 #define PANEL_LOT            "RCA_LOT"
 #define PANEL_TOTAL_FLOAT    "RCA_TOTAL_FLOAT"
+#define PANEL_REMARK         "RCA_REMARK"
 #define PANEL_TBL            "RCA_TBL"
 #define PANEL_THD            "RCA_THD"
 #define PANEL_X              12
@@ -30,10 +29,10 @@
 #define PANEL_UI_MS          250
 #define PANEL_HISTORY_MS     1500
 #define GV_PAUSE_KEY         "RCA_PAUSE_STATE"
-#define GV_SMA_KEY           "RCA_SMA_STATE"
+#define PIVOT_ENTRY_PIPS     2.0
 #define TABLE_HDR_H          28
 #define TABLE_ROW_H          26
-#define TABLE_COLS           8
+#define TABLE_COLS           9
 #define TABLE_LINE           1
 #define TABLE_CELL_PAD       10
 #define FONT_UI              "Calibri"
@@ -46,6 +45,8 @@
 #define CLR_LINE             C'52,56,68'
 #define CLR_TEXT             C'228,230,236'
 #define CLR_MUTED            C'138,146,160'
+#define CLR_GOLD             C'214,176,84'
+#define CLR_REMARK           C'226,72,68'
 #define CLR_ACCENT           C'196,164,98'
 #define CLR_POS              C'92,196,148'
 #define CLR_NEG              C'224,118,112'
@@ -53,16 +54,12 @@
 #define CLR_BTN_GO_FG        C'176,214,190'
 #define CLR_BTN_STOP_BG      C'82,48,50'
 #define CLR_BTN_STOP_FG      C'220,188,186'
-#define CLR_BTN_SMA_ON_BG    C'42,68,92'
-#define CLR_BTN_SMA_ON_FG    C'176,204,224'
-#define CLR_BTN_SMA_OFF_BG   C'48,50,58'
-#define CLR_BTN_SMA_OFF_FG   C'160,164,174'
 
 //--- Max Layer Scope
 enum ENUM_MAX_LAYER_SCOPE
   {
-   MAX_LAYER_MAGIC_ONLY,  // Magic Only (this symbol)
-   MAX_LAYER_ALL_ACCOUNT  // All account trades
+   MAX_LAYER_MAGIC_ONLY,  // Per pair (symbol + magic)
+   MAX_LAYER_ALL_ACCOUNT  // Whole account
   };
 
 //--- Pair config runtime
@@ -76,26 +73,20 @@ struct PairConfig
    string   resolved;
    datetime last_trade_time;
    string   last_action;
-   int      sma_handle;
-   string   sma_status;
    double   closed_profit;
   };
 
 //--- Input Parameters: General
 input string               InpSectionGeneral      = "=== General ===";
-input int                  MaxLayers              = 0;                   // Max Layers (0 = no limit)
+input int                  MaxLayers              = 0;                   // Max Layers per side (0 = no limit)
 input ENUM_MAX_LAYER_SCOPE MaxLayerScope          = MAX_LAYER_MAGIC_ONLY; // Max Layer Scope
 input string               SymbolSuffix           = "c";                 // Symbol Suffix (empty = none)
 
 //--- Operations
 input string               InpSectionOps          = "=== Operations ===";
 input bool                 ShowPanel              = true;                // Show Panel
+input string               PanelRemark            = "";                  // Panel Remark (optional)
 input bool                 ForceActive            = false;               // Force Active (start trading; for tester)
-
-//--- Entry Filter
-input string               InpSectionEntry        = "=== Entry Filter ===";
-input bool                 UseSmaEntryFilter      = true;                // SMA200 entry filter (default)
-input ENUM_TIMEFRAMES      SmaTimeframe           = PERIOD_M15;          // SMA200 timeframe
 
 //--- EURUSD
 input string               InpSectionEURUSD       = "=== EURUSD ===";
@@ -146,12 +137,81 @@ input double               USDCAD_Lot             = 0.1;                 // Lot 
 input int                  USDCAD_PipStep         = 11;                  // Pip Step USDCAD
 input ulong                USDCAD_Magic           = 777777;              // Magic USDCAD
 
+//--- AUDCAD
+input string               InpSectionAUDCAD       = "=== AUDCAD ===";
+input bool                 AUDCAD_Enable          = false;               // Enable AUDCAD
+input double               AUDCAD_Lot             = 0.1;                 // Lot AUDCAD
+input int                  AUDCAD_PipStep         = 12;                  // Pip Step AUDCAD
+input ulong                AUDCAD_Magic           = 888888;              // Magic AUDCAD
+
+//--- NZDCAD
+input string               InpSectionNZDCAD       = "=== NZDCAD ===";
+input bool                 NZDCAD_Enable          = false;               // Enable NZDCAD
+input double               NZDCAD_Lot             = 0.1;                 // Lot NZDCAD
+input int                  NZDCAD_PipStep         = 12;                  // Pip Step NZDCAD
+input ulong                NZDCAD_Magic           = 999999;              // Magic NZDCAD
+
+//--- EURAUD
+input string               InpSectionEURAUD       = "=== EURAUD ===";
+input bool                 EURAUD_Enable          = false;               // Enable EURAUD
+input double               EURAUD_Lot             = 0.1;                 // Lot EURAUD
+input int                  EURAUD_PipStep         = 16;                  // Pip Step EURAUD
+input ulong                EURAUD_Magic           = 121212;              // Magic EURAUD
+
+//--- GBPCAD
+input string               InpSectionGBPCAD       = "=== GBPCAD ===";
+input bool                 GBPCAD_Enable          = false;               // Enable GBPCAD
+input double               GBPCAD_Lot             = 0.1;                 // Lot GBPCAD
+input int                  GBPCAD_PipStep         = 18;                  // Pip Step GBPCAD
+input ulong                GBPCAD_Magic           = 131313;              // Magic GBPCAD
+
+//--- AUDJPY
+input string               InpSectionAUDJPY       = "=== AUDJPY ===";
+input bool                 AUDJPY_Enable          = false;               // Enable AUDJPY
+input double               AUDJPY_Lot             = 0.1;                 // Lot AUDJPY
+input int                  AUDJPY_PipStep         = 110;                 // Pip Step AUDJPY
+input ulong                AUDJPY_Magic           = 141414;              // Magic AUDJPY
+
+//--- CADCHF
+input string               InpSectionCADCHF       = "=== CADCHF ===";
+input bool                 CADCHF_Enable          = false;               // Enable CADCHF
+input double               CADCHF_Lot             = 0.1;                 // Lot CADCHF
+input int                  CADCHF_PipStep         = 12;                  // Pip Step CADCHF
+input ulong                CADCHF_Magic           = 151515;              // Magic CADCHF
+
+//--- AUDCHF
+input string               InpSectionAUDCHF       = "=== AUDCHF ===";
+input bool                 AUDCHF_Enable          = false;               // Enable AUDCHF
+input double               AUDCHF_Lot             = 0.1;                 // Lot AUDCHF
+input int                  AUDCHF_PipStep         = 12;                  // Pip Step AUDCHF
+input ulong                AUDCHF_Magic           = 161616;              // Magic AUDCHF
+
+//--- CADJPY
+input string               InpSectionCADJPY       = "=== CADJPY ===";
+input bool                 CADJPY_Enable          = false;               // Enable CADJPY
+input double               CADJPY_Lot             = 0.1;                 // Lot CADJPY
+input int                  CADJPY_PipStep         = 110;                 // Pip Step CADJPY
+input ulong                CADJPY_Magic           = 171717;              // Magic CADJPY
+
+//--- GBPAUD
+input string               InpSectionGBPAUD       = "=== GBPAUD ===";
+input bool                 GBPAUD_Enable          = false;               // Enable GBPAUD
+input double               GBPAUD_Lot             = 0.1;                 // Lot GBPAUD
+input int                  GBPAUD_PipStep         = 18;                  // Pip Step GBPAUD
+input ulong                GBPAUD_Magic           = 181818;              // Magic GBPAUD
+
+//--- EURCAD
+input string               InpSectionEURCAD       = "=== EURCAD ===";
+input bool                 EURCAD_Enable          = false;               // Enable EURCAD
+input double               EURCAD_Lot             = 0.1;                 // Lot EURCAD
+input int                  EURCAD_PipStep         = 14;                  // Pip Step EURCAD
+input ulong                EURCAD_Magic           = 191919;              // Magic EURCAD
+
 //--- Global Variables
 CTrade         trade;
 CPositionInfo  m_position;
 PairConfig     g_pairs[PAIR_COUNT];
 bool           g_trading_pause = true;
-bool           g_sma_filter = true;
 uint           g_last_panel_ms = 0;
 uint           g_last_history_ms = 0;
 const int      TRADE_RETRY_COUNT = 2;
@@ -167,9 +227,8 @@ double NormalizeLot(const string symbol, double lot);
 void SetTradeMagic(const ulong magic);
 bool IsEaMagic(const ulong magic);
 bool CanAddLayer(const int layer_count);
-bool IsSmaTouched(const int pair_index);
-void CreateSmaHandles();
-void ReleaseSmaHandles();
+bool IsDailyPivotTouched(const int pair_index);
+double DailyPivot(const string symbol);
 void InitPairConfigs();
 void ResolvePairSymbols();
 void ApplyRuntimeSettings();
@@ -184,19 +243,15 @@ void SetLabelColor(const string name, const color clr);
 void CreateLabel(const string name, const int x, const int y, const int fontsize, const color clr, const string font);
 void CreateRectLabel(const string name, const int x, const int y, const int w, const int h,
                      const color bg, const color border);
-void CreateTableFrame(const int table_x, const int table_y, const int table_w, const int table_h);
+void CreateTableFrame(const int table_x, const int table_y, const int table_w, const int table_h, const int rows);
 int TableColX(const int table_x, const int col);
 int TableWidth();
 string CellName(const int row, const int col);
 string MoneyText(const double value);
 string PauseGvName();
-string SmaGvName();
-string PeriodToShort(const ENUM_TIMEFRAMES tf);
 string StatusLineText();
 void SavePauseState();
-void SaveSmaFilterState();
 void RestoreOrInitPauseState();
-void ApplySmaFilterFromInput();
 void CreateSoftButton(const string name, const int x, const int y, const int w, const int h);
 void RefreshControlButtons();
 void RefreshStatusLine();
@@ -207,56 +262,14 @@ string PauseGvName()
    return GV_PAUSE_KEY + "_" + IntegerToString((int)ChartID());
   }
 
-string SmaGvName()
-  {
-   return GV_SMA_KEY + "_" + IntegerToString((int)ChartID());
-  }
-
-string PeriodToShort(const ENUM_TIMEFRAMES tf)
-  {
-   switch(tf)
-     {
-      case PERIOD_M1:  return "M1";
-      case PERIOD_M2:  return "M2";
-      case PERIOD_M3:  return "M3";
-      case PERIOD_M4:  return "M4";
-      case PERIOD_M5:  return "M5";
-      case PERIOD_M6:  return "M6";
-      case PERIOD_M10: return "M10";
-      case PERIOD_M12: return "M12";
-      case PERIOD_M15: return "M15";
-      case PERIOD_M20: return "M20";
-      case PERIOD_M30: return "M30";
-      case PERIOD_H1:  return "H1";
-      case PERIOD_H2:  return "H2";
-      case PERIOD_H3:  return "H3";
-      case PERIOD_H4:  return "H4";
-      case PERIOD_H6:  return "H6";
-      case PERIOD_H8:  return "H8";
-      case PERIOD_H12: return "H12";
-      case PERIOD_D1:  return "D1";
-      case PERIOD_W1:  return "W1";
-      case PERIOD_MN1: return "MN1";
-      default:         return IntegerToString((int)tf);
-     }
-  }
-
 string StatusLineText()
   {
-   return StringFormat("Status  %s      SMA  %s  %s",
-                       g_trading_pause ? "Paused" : "Active",
-                       g_sma_filter ? "ON" : "OFF",
-                       PeriodToShort(SmaTimeframe));
+   return StringFormat("Status  %s", g_trading_pause ? "Paused" : "Active");
   }
 
 void SavePauseState()
   {
    GlobalVariableSet(PauseGvName(), g_trading_pause ? 1.0 : 0.0);
-  }
-
-void SaveSmaFilterState()
-  {
-   GlobalVariableSet(SmaGvName(), g_sma_filter ? 1.0 : 0.0);
   }
 
 void RestoreOrInitPauseState()
@@ -276,12 +289,6 @@ void RestoreOrInitPauseState()
 
    if(ForceActive)
       g_trading_pause = false;
-  }
-
-void ApplySmaFilterFromInput()
-  {
-   // Input is source of truth whenever settings are (re)applied
-   g_sma_filter = UseSmaEntryFilter;
   }
 
 void SetTradeMagic(const ulong magic)
@@ -409,74 +416,63 @@ double NormalizeLot(const string symbol, double lot)
   }
 
 //+------------------------------------------------------------------+
-bool IsSmaTouched(const int pair_index)
+double DailyPivot(const string symbol)
   {
-   if(!g_sma_filter)
-     {
-      g_pairs[pair_index].sma_status = "OK";
-      return true;
-     }
-
-   int handle = g_pairs[pair_index].sma_handle;
-   if(handle == INVALID_HANDLE)
-     {
-      g_pairs[pair_index].sma_status = "WAIT";
-      return false;
-     }
-
-   double ma[];
-   ArraySetAsSeries(ma, true);
-   if(CopyBuffer(handle, 0, 0, 1, ma) < 1)
-     {
-      g_pairs[pair_index].sma_status = "WAIT";
-      return false;
-     }
-
-   string symbol = g_pairs[pair_index].resolved;
-   double high = iHigh(symbol, SmaTimeframe, 0);
-   double low  = iLow(symbol, SmaTimeframe, 0);
-   if(high <= 0.0 || low <= 0.0)
-     {
-      g_pairs[pair_index].sma_status = "WAIT";
-      return false;
-     }
-
-   bool touch = (low <= ma[0] && high >= ma[0]);
-   g_pairs[pair_index].sma_status = touch ? "OK" : "WAIT";
-   return touch;
+   double high  = iHigh(symbol, PERIOD_D1, 1);
+   double low   = iLow(symbol, PERIOD_D1, 1);
+   double close = iClose(symbol, PERIOD_D1, 1);
+   if(high <= 0.0 || low <= 0.0 || close <= 0.0)
+      return 0.0;
+   return (high + low + close) / 3.0;
   }
 
-void CreateSmaHandles()
+double PriceToPips(const string symbol, const double price_dist)
   {
-   for(int i = 0; i < PAIR_COUNT; i++)
-     {
-      g_pairs[i].sma_handle = INVALID_HANDLE;
-      g_pairs[i].sma_status = "-";
+   int digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
+   double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
+   if(point <= 0.0)
+      return 0.0;
 
-      if(!g_pairs[i].enabled)
-         continue;
-
-      g_pairs[i].sma_handle = iMA(g_pairs[i].resolved, SmaTimeframe, SMA_PERIOD, 0, MODE_SMA, PRICE_CLOSE);
-      if(g_pairs[i].sma_handle == INVALID_HANDLE)
-        {
-         Print("Failed to create SMA handle: ", g_pairs[i].resolved, " TF=", PeriodToShort(SmaTimeframe));
-         g_pairs[i].sma_status = "WAIT";
-        }
-      else
-         g_pairs[i].sma_status = g_sma_filter ? "WAIT" : "OK";
-     }
+   double pip = ((digits == 3 || digits == 5) ? 10.0 * point : point);
+   if(pip <= 0.0)
+      return 0.0;
+   return price_dist / pip;
   }
 
-void ReleaseSmaHandles()
+bool MidPivotGap(const string symbol, double &gap_pips)
   {
-   for(int i = 0; i < PAIR_COUNT; i++)
-     {
-      if(g_pairs[i].sma_handle != INVALID_HANDLE)
-        {
-         IndicatorRelease(g_pairs[i].sma_handle);
-         g_pairs[i].sma_handle = INVALID_HANDLE;
-        }
-     }
+   gap_pips = 0.0;
+   double pivot = DailyPivot(symbol);
+   if(pivot <= 0.0)
+      return false;
+
+   double bid = SymbolInfoDouble(symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(symbol, SYMBOL_ASK);
+   if(bid <= 0.0 || ask <= 0.0)
+      return false;
+
+   double mid = (bid + ask) / 2.0;
+   gap_pips = PriceToPips(symbol, mid - pivot);
+   return true;
+  }
+
+bool IsDailyPivotTouched(const int pair_index)
+  {
+   double gap_pips = 0.0;
+   if(!MidPivotGap(g_pairs[pair_index].resolved, gap_pips))
+      return false;
+   return (MathAbs(gap_pips) <= PIVOT_ENTRY_PIPS);
+  }
+
+string PivotGapText(const string symbol, const int buys, const int sells)
+  {
+   if(buys > 0 || sells > 0)
+      return "-";
+
+   double gap_pips = 0.0;
+   if(!MidPivotGap(symbol, gap_pips))
+      return "-";
+   return StringFormat("%+.1f", gap_pips);
   }
 
 //+------------------------------------------------------------------+
@@ -524,13 +520,71 @@ void InitPairConfigs()
    g_pairs[6].pip_step    = USDCAD_PipStep;
    g_pairs[6].magic       = USDCAD_Magic;
 
+   g_pairs[7].base_symbol = "AUDCAD";
+   g_pairs[7].enabled     = AUDCAD_Enable;
+   g_pairs[7].lot         = AUDCAD_Lot;
+   g_pairs[7].pip_step    = AUDCAD_PipStep;
+   g_pairs[7].magic       = AUDCAD_Magic;
+
+   g_pairs[8].base_symbol = "NZDCAD";
+   g_pairs[8].enabled     = NZDCAD_Enable;
+   g_pairs[8].lot         = NZDCAD_Lot;
+   g_pairs[8].pip_step    = NZDCAD_PipStep;
+   g_pairs[8].magic       = NZDCAD_Magic;
+
+   g_pairs[9].base_symbol = "EURAUD";
+   g_pairs[9].enabled     = EURAUD_Enable;
+   g_pairs[9].lot         = EURAUD_Lot;
+   g_pairs[9].pip_step    = EURAUD_PipStep;
+   g_pairs[9].magic       = EURAUD_Magic;
+
+   g_pairs[10].base_symbol = "GBPCAD";
+   g_pairs[10].enabled     = GBPCAD_Enable;
+   g_pairs[10].lot         = GBPCAD_Lot;
+   g_pairs[10].pip_step    = GBPCAD_PipStep;
+   g_pairs[10].magic       = GBPCAD_Magic;
+
+   g_pairs[11].base_symbol = "AUDJPY";
+   g_pairs[11].enabled     = AUDJPY_Enable;
+   g_pairs[11].lot         = AUDJPY_Lot;
+   g_pairs[11].pip_step    = AUDJPY_PipStep;
+   g_pairs[11].magic       = AUDJPY_Magic;
+
+   g_pairs[12].base_symbol = "CADCHF";
+   g_pairs[12].enabled     = CADCHF_Enable;
+   g_pairs[12].lot         = CADCHF_Lot;
+   g_pairs[12].pip_step    = CADCHF_PipStep;
+   g_pairs[12].magic       = CADCHF_Magic;
+
+   g_pairs[13].base_symbol = "AUDCHF";
+   g_pairs[13].enabled     = AUDCHF_Enable;
+   g_pairs[13].lot         = AUDCHF_Lot;
+   g_pairs[13].pip_step    = AUDCHF_PipStep;
+   g_pairs[13].magic       = AUDCHF_Magic;
+
+   g_pairs[14].base_symbol = "CADJPY";
+   g_pairs[14].enabled     = CADJPY_Enable;
+   g_pairs[14].lot         = CADJPY_Lot;
+   g_pairs[14].pip_step    = CADJPY_PipStep;
+   g_pairs[14].magic       = CADJPY_Magic;
+
+   g_pairs[15].base_symbol = "GBPAUD";
+   g_pairs[15].enabled     = GBPAUD_Enable;
+   g_pairs[15].lot         = GBPAUD_Lot;
+   g_pairs[15].pip_step    = GBPAUD_PipStep;
+   g_pairs[15].magic       = GBPAUD_Magic;
+
+   g_pairs[16].base_symbol = "EURCAD";
+   g_pairs[16].enabled     = EURCAD_Enable;
+   g_pairs[16].lot         = EURCAD_Lot;
+   g_pairs[16].pip_step    = EURCAD_PipStep;
+   g_pairs[16].magic       = EURCAD_Magic;
+
    for(int i = 0; i < PAIR_COUNT; i++)
      {
       g_pairs[i].resolved        = g_pairs[i].base_symbol + SymbolSuffix;
       g_pairs[i].last_trade_time = 0;
       g_pairs[i].last_action     = "-";
-      g_pairs[i].sma_handle      = INVALID_HANDLE;
-      g_pairs[i].sma_status      = "-";
       g_pairs[i].closed_profit   = 0.0;
      }
   }
@@ -567,11 +621,8 @@ void ResolvePairSymbols()
 
 void ApplyRuntimeSettings()
   {
-   ApplySmaFilterFromInput();
-   ReleaseSmaHandles();
    InitPairConfigs();
    ResolvePairSymbols();
-   CreateSmaHandles();
 
    for(int i = 0; i < PAIR_COUNT; i++)
      {
@@ -652,10 +703,11 @@ int TableColWidth(const int col)
       case 1: return 84;  // Magic
       case 2: return 64;  // Lot
       case 3: return 58;  // Pips
-      case 4: return 52;  // Buy
-      case 5: return 52;  // Sell
-      case 6: return 100; // Float
-      case 7: return 100; // Profit
+      case 4: return 72;  // Pivot gap
+      case 5: return 52;  // Buy
+      case 6: return 52;  // Sell
+      case 7: return 100; // Float
+      case 8: return 100; // Profit
      }
    return 56;
   }
@@ -686,7 +738,35 @@ string MoneyText(const double value)
    return StringFormat("%.2f", value);
   }
 
-void CreateTableFrame(const int table_x, const int table_y, const int table_w, const int table_h)
+int VisiblePairCount()
+  {
+   int rows = 0;
+   for(int i = 0; i < PAIR_COUNT; i++)
+     {
+      if(g_pairs[i].enabled)
+         rows++;
+     }
+   return rows;
+  }
+
+string RemarkText()
+  {
+   string remark = PanelRemark;
+   StringTrimLeft(remark);
+   StringTrimRight(remark);
+   return remark;
+  }
+
+string LayerTotalText(const int layers)
+  {
+   if(MaxLayers <= 0)
+      return StringFormat("Layers  %d", layers);
+   if(MaxLayerScope == MAX_LAYER_MAGIC_ONLY)
+      return StringFormat("Layers  %d   %d/side per pair", layers, MaxLayers);
+   return StringFormat("Layers  %d   %d/side account", layers, MaxLayers);
+  }
+
+void CreateTableFrame(const int table_x, const int table_y, const int table_w, const int table_h, const int rows)
   {
    CreateRectLabel(PANEL_TBL, table_x, table_y, table_w, table_h, CLR_CARD, CLR_LINE);
 
@@ -694,7 +774,7 @@ void CreateTableFrame(const int table_x, const int table_y, const int table_w, c
                    table_w - TABLE_LINE * 2, TABLE_HDR_H,
                    CLR_HEADER, CLR_HEADER);
 
-   for(int i = 0; i < PAIR_COUNT; i++)
+   for(int i = 0; i < rows; i++)
      {
       int y = table_y + TABLE_LINE + TABLE_HDR_H + i * TABLE_ROW_H;
       color row_bg = ((i % 2) == 0) ? CLR_ROW_A : CLR_ROW_B;
@@ -748,13 +828,6 @@ void RefreshControlButtons()
       ObjectSetInteger(0, BTN_PAUSE, OBJPROP_COLOR, g_trading_pause ? CLR_BTN_GO_FG : CLR_BTN_STOP_FG);
      }
 
-   if(ObjectFind(0, BTN_SMA) >= 0)
-     {
-      ObjectSetString(0, BTN_SMA, OBJPROP_TEXT, g_sma_filter ? "SMA ON" : "SMA OFF");
-      ObjectSetInteger(0, BTN_SMA, OBJPROP_BGCOLOR, g_sma_filter ? CLR_BTN_SMA_ON_BG : CLR_BTN_SMA_OFF_BG);
-      ObjectSetInteger(0, BTN_SMA, OBJPROP_COLOR, g_sma_filter ? CLR_BTN_SMA_ON_FG : CLR_BTN_SMA_OFF_FG);
-     }
-
    RefreshStatusLine();
   }
 
@@ -762,8 +835,9 @@ void CreatePanel()
   {
    DeletePanel();
 
+   int rows = VisiblePairCount();
    int table_w = TableWidth();
-   int table_h = TABLE_LINE + TABLE_HDR_H + PAIR_COUNT * TABLE_ROW_H + TABLE_LINE;
+   int table_h = TABLE_LINE + TABLE_HDR_H + rows * TABLE_ROW_H + TABLE_LINE;
    int table_x = PANEL_X + PANEL_PAD;
    int table_y = PANEL_Y + 168;
    int panel_w = table_w + PANEL_PAD * 2;
@@ -784,32 +858,40 @@ void CreatePanel()
    ObjectSetInteger(0, PANEL_BG, OBJPROP_HIDDEN, true);
    ObjectSetInteger(0, PANEL_BG, OBJPROP_ZORDER, 0);
 
-   CreateLabel(PANEL_TITLE, PANEL_X + PANEL_PAD, PANEL_Y + 14, 16, CLR_TEXT, "Arial Bold");
-   ObjectSetString(0, PANEL_TITLE, OBJPROP_TEXT, "RAVEN COST AVERAGING  V3.5");
+   CreateLabel(PANEL_TITLE, PANEL_X + PANEL_PAD, PANEL_Y + 14, 16, CLR_GOLD, "Arial Black");
+   ObjectSetString(0, PANEL_TITLE, OBJPROP_TEXT, "RAVEN COST AVERAGING  V3.6");
+
+   string remark = RemarkText();
+   if(remark != "")
+     {
+      CreateLabel(PANEL_REMARK, PANEL_X + panel_w - PANEL_PAD, PANEL_Y + 18, 12, CLR_REMARK, "Arial Bold");
+      ObjectSetInteger(0, PANEL_REMARK, OBJPROP_ANCHOR, ANCHOR_RIGHT_UPPER);
+      ObjectSetString(0, PANEL_REMARK, OBJPROP_TEXT, remark);
+     }
 
    CreateLabel(PANEL_CREDIT, PANEL_X + PANEL_PAD, PANEL_Y + 44, 9, CLR_MUTED, FONT_UI);
    ObjectSetString(0, PANEL_CREDIT, OBJPROP_TEXT, "EA developed by Randi Apriliyadi - 2026");
 
    CreateLabel(PANEL_STATUS, PANEL_X + PANEL_PAD, PANEL_Y + 78, 10, CLR_TEXT, FONT_UI);
    CreateLabel(PANEL_EXPOSURE, PANEL_X + PANEL_PAD, PANEL_Y + 102, 10, CLR_MUTED, FONT_UI);
-   CreateLabel(PANEL_LOT, PANEL_X + PANEL_PAD + 130, PANEL_Y + 102, 10, CLR_MUTED, FONT_UI);
-   CreateLabel(PANEL_TOTAL_FLOAT, PANEL_X + PANEL_PAD + 250, PANEL_Y + 102, 10, CLR_TEXT, FONT_UI);
+   CreateLabel(PANEL_LOT, PANEL_X + PANEL_PAD + 260, PANEL_Y + 102, 10, CLR_MUTED, FONT_UI);
+   CreateLabel(PANEL_TOTAL_FLOAT, PANEL_X + PANEL_PAD + 380, PANEL_Y + 102, 10, CLR_TEXT, FONT_UI);
 
    CreateSoftButton(BTN_PAUSE, PANEL_X + PANEL_PAD, PANEL_Y + 130, 88, 26);
-   CreateSoftButton(BTN_SMA, PANEL_X + PANEL_PAD + 104, PANEL_Y + 130, 88, 26);
    RefreshControlButtons();
 
-   CreateTableFrame(table_x, table_y, table_w, table_h);
+   CreateTableFrame(table_x, table_y, table_w, table_h, rows);
 
    string headers[TABLE_COLS];
    headers[0] = "Symbol";
    headers[1] = "Magic";
    headers[2] = "Lot";
    headers[3] = "Pips";
-   headers[4] = "Buy";
-   headers[5] = "Sell";
-   headers[6] = "Float";
-   headers[7] = "Profit";
+   headers[4] = "Pivot";
+   headers[5] = "Buy";
+   headers[6] = "Sell";
+   headers[7] = "Float";
+   headers[8] = "Profit";
 
    int header_y = table_y + TABLE_LINE + 6;
    for(int c = 0; c < TABLE_COLS; c++)
@@ -819,14 +901,19 @@ void CreatePanel()
       ObjectSetString(0, hname, OBJPROP_TEXT, headers[c]);
      }
 
+   int row = 0;
    for(int i = 0; i < PAIR_COUNT; i++)
      {
-      int row_y = table_y + TABLE_LINE + TABLE_HDR_H + i * TABLE_ROW_H + 5;
+      if(!g_pairs[i].enabled)
+         continue;
+
+      int row_y = table_y + TABLE_LINE + TABLE_HDR_H + row * TABLE_ROW_H + 5;
       for(int c = 0; c < TABLE_COLS; c++)
         {
          string font = (c <= 1) ? FONT_UI : FONT_NUM;
-         CreateLabel(CellName(i, c), TableColX(table_x, c) + TABLE_CELL_PAD, row_y, 9, CLR_TEXT, font);
+         CreateLabel(CellName(row, c), TableColX(table_x, c) + TABLE_CELL_PAD, row_y, 9, CLR_TEXT, font);
         }
+      row++;
      }
   }
 
@@ -919,23 +1006,33 @@ void UpdatePanel()
 
    RefreshControlButtons();
 
-   SetLabelText(PANEL_EXPOSURE, StringFormat("Layers  %d", layers));
+   SetLabelText(PANEL_EXPOSURE, LayerTotalText(layers));
    SetLabelText(PANEL_LOT, StringFormat("Lot  %s", MoneyText(lots)));
    SetLabelText(PANEL_TOTAL_FLOAT, StringFormat("Total Float  %s", MoneyText(floating)));
    SetLabelColor(PANEL_TOTAL_FLOAT, floating >= 0.0 ? CLR_POS : CLR_NEG);
+   if(RemarkText() == "")
+      ObjectDelete(0, PANEL_REMARK);
+   else
+      SetLabelText(PANEL_REMARK, RemarkText());
 
+   int row = 0;
    for(int i = 0; i < PAIR_COUNT; i++)
      {
-      SetLabelText(CellName(i, 0), g_pairs[i].resolved);
-      SetLabelText(CellName(i, 1), IntegerToString((int)g_pairs[i].magic));
-      SetLabelText(CellName(i, 2), MoneyText(g_pairs[i].lot));
-      SetLabelText(CellName(i, 3), IntegerToString(g_pairs[i].pip_step));
-      SetLabelText(CellName(i, 4), IntegerToString(buys[i]));
-      SetLabelText(CellName(i, 5), IntegerToString(sells[i]));
-      SetLabelText(CellName(i, 6), MoneyText(floats[i]));
-      SetLabelText(CellName(i, 7), MoneyText(g_pairs[i].closed_profit));
-      SetLabelColor(CellName(i, 6), floats[i] >= 0.0 ? CLR_POS : CLR_NEG);
-      SetLabelColor(CellName(i, 7), g_pairs[i].closed_profit >= 0.0 ? CLR_POS : CLR_NEG);
+      if(!g_pairs[i].enabled)
+         continue;
+
+      SetLabelText(CellName(row, 0), g_pairs[i].resolved);
+      SetLabelText(CellName(row, 1), IntegerToString((int)g_pairs[i].magic));
+      SetLabelText(CellName(row, 2), MoneyText(g_pairs[i].lot));
+      SetLabelText(CellName(row, 3), IntegerToString(g_pairs[i].pip_step));
+      SetLabelText(CellName(row, 4), PivotGapText(g_pairs[i].resolved, buys[i], sells[i]));
+      SetLabelText(CellName(row, 5), IntegerToString(buys[i]));
+      SetLabelText(CellName(row, 6), IntegerToString(sells[i]));
+      SetLabelText(CellName(row, 7), MoneyText(floats[i]));
+      SetLabelText(CellName(row, 8), MoneyText(g_pairs[i].closed_profit));
+      SetLabelColor(CellName(row, 7), floats[i] >= 0.0 ? CLR_POS : CLR_NEG);
+      SetLabelColor(CellName(row, 8), g_pairs[i].closed_profit >= 0.0 ? CLR_POS : CLR_NEG);
+      row++;
      }
 
    ChartRedraw(0);
@@ -970,9 +1067,7 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    SavePauseState();
-   SaveSmaFilterState();
    EventKillTimer();
-   ReleaseSmaHandles();
    DeletePanel();
   }
 
@@ -997,17 +1092,6 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
       ObjectSetInteger(0, BTN_PAUSE, OBJPROP_STATE, false);
       SavePauseState();
       Print("Trading status: ", g_trading_pause ? "Paused" : "Active");
-      RefreshControlButtons();
-      ChartRedraw(0);
-      return;
-     }
-
-   if(sparam == BTN_SMA)
-     {
-      g_sma_filter = !g_sma_filter;
-      ObjectSetInteger(0, BTN_SMA, OBJPROP_STATE, false);
-      SaveSmaFilterState();
-      Print("SMA filter: ", g_sma_filter ? "ON" : "OFF", " TF=", PeriodToShort(SmaTimeframe));
       RefreshControlButtons();
       ChartRedraw(0);
      }
@@ -1211,9 +1295,9 @@ void ManageGridAndGlobalTP(const int pair_index)
          return;
         }
 
-      if(!IsSmaTouched(pair_index))
+      if(!IsDailyPivotTouched(pair_index))
         {
-         SetPairAction(pair_index, "SMA wait");
+         SetPairAction(pair_index, "Pivot wait");
          return;
         }
 
@@ -1236,7 +1320,7 @@ void ManageGridAndGlobalTP(const int pair_index)
    // Existing positions: sync TP even while paused
    SyncBasketTP(symbol, magic, anchor_buy_price, anchor_sell_price, gap);
 
-   // --- RULE 2: GRID LAYERING (no SMA filter) ---
+   // --- RULE 2: GRID LAYERING (no pivot filter) ---
    if(!g_trading_pause)
      {
       if(total_buys > 0 && CanAddLayer(buy_layer_count) && ask <= (lowest_buy_price - gap))
