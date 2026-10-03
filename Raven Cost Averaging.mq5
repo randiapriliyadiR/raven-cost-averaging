@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Randi Apriliyadi"
 #property link      "https://github.com/randiapriliyadiR"
-#property version   "3.70"
+#property version   "3.60"
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
@@ -897,7 +897,7 @@ void CreatePanel()
    ObjectSetInteger(0, PANEL_BG, OBJPROP_ZORDER, 0);
 
    CreateLabel(PANEL_TITLE, PANEL_X + PANEL_PAD, PANEL_Y + 14, 16, CLR_GOLD, "Arial Black");
-   ObjectSetString(0, PANEL_TITLE, OBJPROP_TEXT, "RAVEN COST AVERAGING  V3.7");
+   ObjectSetString(0, PANEL_TITLE, OBJPROP_TEXT, "RAVEN COST AVERAGING  V3.6");
 
    string remark = RemarkText();
    if(remark != "")

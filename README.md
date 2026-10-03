@@ -2,7 +2,7 @@
 
 MetaTrader 5 multi-major grid hedge EA with broker-side Take Profit, chart control panel, and a daily-pivot filter for the first entry.
 
-**Version:** 3.7  
+**Version:** 3.6  
 **Platform:** MetaTrader 5 (MQL5)  
 **Author:** [Randi Apriliyadi](https://github.com/randiapriliyadiR)
 
@@ -129,7 +129,7 @@ The panel count on the left is every open position of this EA. The text after it
 
 Top-left on the chart:
 
-- Title: **RAVEN COST AVERAGING V3.7** in gold
+- Title: **RAVEN COST AVERAGING V3.6** in gold
 - Optional **Panel Remark** at the top-right, red, hidden when the input is empty
 - Credit: EA developed by Randi Apriliyadi - 2026
 - Status: **Active** / **Paused** and **Pivot ON** / **OFF**
